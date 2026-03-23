@@ -146,21 +146,21 @@ def bc_loss_fn(approximator: PINN, ctx: PhysicsContext, data_center: PINNDataset
 
     if return_df:
         return (pd.DataFrame({
-               'r^': r_center_hat,
-               't^': t_center_hat,
-               'cf^': cf_center_hat,
-               'd/dr(cf^)': cf_center_hat_r,
-               'residual_center': residual_center
+               'r^': r_center_hat.detach().cpu().numpy().flatten(),
+               't^': t_center_hat.detach().cpu().numpy().flatten(),
+               'cf^': cf_center_hat.detach().cpu().numpy().flatten(),
+               'd/dr(cf^)': cf_center_hat_r.detach().cpu().numpy().flatten(),
+               'residual_center': residual_center.detach().cpu().numpy().flatten()
                }),
                 pd.DataFrame({
-                    'r^': r_surface_hat,
-                    't^': t_surface_hat,
-                    'phi': phi,
-                    'cg^': cf_surface_hat,
-                    'cf^/phi': cf_surface_tilde,
-                    'D/R * d/dr(cf^/φ)': term1,
-                    'Pup * (1 - cf^/φ)': term2,
-                    'residual_surface': residual_surface
+                    'r^': r_surface_hat.detach().cpu().numpy().flatten(),
+                    't^': t_surface_hat.detach().cpu().numpy().flatten(),
+                    'phi': phi.detach().cpu().numpy().flatten(),
+                    'cg^': cf_surface_hat.detach().cpu().numpy().flatten(),
+                    'cf^/phi': cf_surface_tilde.detach().cpu().numpy().flatten(),
+                    'D/R * d/dr(cf^/φ)': term1.detach().cpu().numpy().flatten(),
+                    'Pup * (1 - cf^/φ)': term2.detach().cpu().numpy().flatten(),
+                    'residual_surface': residual_surface.detach().cpu().numpy().flatten()
                 })
             )
     return loss_center, loss_surface 
@@ -179,13 +179,12 @@ def ic_loss_fn(approximator, data: PINNDataset, ctx: PhysicsContext, return_df=F
     loss = weight * (torch.mean(residual1**2) + torch.mean(residual2**2) + torch.mean(residual3**2))
     if return_df:
         return pd.DataFrame({
-            'r^': r_hat,
-            't^': t_hat,
-            'cf^': cf_hat,
-            'residual1': residual1,
-            'residual2': residual2,
-            'residual3': residual3, 
-            'loss': loss
+            'r^': r_hat.detach().cpu().numpy().flatten(),
+            't^': t_hat.detach().cpu().numpy().flatten(),
+            'cf^': cf_hat.detach().cpu().numpy().flatten(),
+            'residual1': residual1.detach().cpu().numpy().flatten(),
+            'residual2': residual2.detach().cpu().numpy().flatten(),
+            'residual3': residual3.detach().cpu().numpy().flatten()
         })
     return loss
 
