@@ -156,7 +156,7 @@ def bc_loss_fn(approximator: PINN, ctx: PhysicsContext, data_center: PINNDataset
                     'r^': r_surface_hat.detach().cpu().numpy().flatten(),
                     't^': t_surface_hat.detach().cpu().numpy().flatten(),
                     'phi': phi.detach().cpu().numpy().flatten(),
-                    'cg^': cf_surface_hat.detach().cpu().numpy().flatten(),
+                    'cf^': cf_surface_hat.detach().cpu().numpy().flatten(),
                     'cf^/phi': cf_surface_tilde.detach().cpu().numpy().flatten(),
                     'D/R * d/dr(cf^/φ)': term1.detach().cpu().numpy().flatten(),
                     'Pup * (1 - cf^/φ)': term2.detach().cpu().numpy().flatten(),
@@ -182,6 +182,8 @@ def ic_loss_fn(approximator, data: PINNDataset, ctx: PhysicsContext, return_df=F
             'r^': r_hat.detach().cpu().numpy().flatten(),
             't^': t_hat.detach().cpu().numpy().flatten(),
             'cf^': cf_hat.detach().cpu().numpy().flatten(),
+            'cb^': cb_hat.detach().cpu().numpy().flatten(),
+            'ci^': ci_hat.detach().cpu().numpy().flatten(),
             'residual1': residual1.detach().cpu().numpy().flatten(),
             'residual2': residual2.detach().cpu().numpy().flatten(),
             'residual3': residual3.detach().cpu().numpy().flatten()

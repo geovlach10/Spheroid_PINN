@@ -212,7 +212,7 @@ class PINNSolver():
                     line = f"{epoch:^10} | {loss.item():^10.4e} | {loss_pde_eq1.item():^10.4e} | {loss_pde_eq2.item():^10.4e} | {loss_pde_eq3.item():^10.4e} | {loss_bc_center.item():^10.4e} | {loss_bc_surface.item():^10.4e} | {loss_ic.item():^10.4e} "
                     print(line)
                 if epoch % 1000 == 0:
-                    log_to_excel(epoch=epoch, approximator=self.approximator, pde_dataset=self.pde_training_dataset, pde_loss_fn=self.pde_loss_fn, ctx=self.ctx)
+                    log_to_excel(epoch=epoch, approximator=self.approximator, pde_dataset=self.pde_training_dataset, center_dataset=self.bc_center_training_dataset, surface_dataset=self.bc_surface_training_dataset, ic_dataset=self.ic_training_dataset, pde_loss_fn=self.pde_loss_fn, bc_loss_fn=self.bc_loss_fn,ic_loss_fn=self.ic_loss_fn, ctx=self.ctx)
                 #     analysis_df = pde_loss_fn(approximator=self.approximator, data=self.pde_training_dataset, ctx=self.ctx,  term_by_term_analysis=True)
                 #     save_path = f'results/term_by_term_analysis_epoch_{epoch}.xlsx'
                 #     analysis_df.to_excel(save_path, index=False, engine='openpyxl')
@@ -481,12 +481,12 @@ class PINNSolver():
 
     def vizualize_prediction(self, what :str, timestamps):
         plt.figure(figsize=(12, 8))
-        x = torch.linspace(0, self.R, 100).view(-1, 1).to((self.device))
+        x = torch.linspace(0, self.ctx.R, 100).view(-1, 1).to((self.device))
         for time in timestamps:
-            t = torch.full_like(x, time*self.tau).to(self.device)
+            t = torch.full_like(x, time*self.ctx.tau).to(self.device)
             with torch.no_grad():
                 cf, cb, ci = self.approximator(x, t)
-                cf, cb, ci = cf*self.C0, cb*self.C0, ci*self.C0 
+                cf, cb, ci = cf*self.ctx.C0, cb*self.ctx.C0, ci*self.ctx.C0 
             if what == 'cf':
                 plt.plot(x.cpu().numpy(), cf.cpu(), label=f't = {time}')
             if what == 'cb':
