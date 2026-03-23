@@ -12,6 +12,7 @@ from core.data import DataGenerator, PINNDataset
 from core.model import PINN
 from physics.residuals import pde_loss_fn, bc_loss_fn, ic_loss_fn, sensor_loss_fn
 from core.context import PhysicsContext
+from utils.logger import log_to_excel
 
 class PINNSolver():
     def __init__(self, pde_loss_fn, bc_loss_fn, ic_loss_fn, physics_context: PhysicsContext, sensor_loss_fn=None, device=None, seed=42, dtype=torch.float32, n_pde=4000, layers=4, neurons=16):
@@ -210,7 +211,8 @@ class PINNSolver():
                 if epoch % 200 == 0:
                     line = f"{epoch:^10} | {loss.item():^10.4e} | {loss_pde_eq1.item():^10.4e} | {loss_pde_eq2.item():^10.4e} | {loss_pde_eq3.item():^10.4e} | {loss_bc_center.item():^10.4e} | {loss_bc_surface.item():^10.4e} | {loss_ic.item():^10.4e} "
                     print(line)
-                # if epoch % 1000 == 0:
+                if epoch % 1000 == 0:
+                    log_to_excel(epoch=epoch, approximator=self.approximator, pde_dataset=self.pde_training_dataset, pde_loss_fn=self.pde_loss_fn, ctx=self.ctx)
                 #     analysis_df = pde_loss_fn(approximator=self.approximator, data=self.pde_training_dataset, ctx=self.ctx,  term_by_term_analysis=True)
                 #     save_path = f'results/term_by_term_analysis_epoch_{epoch}.xlsx'
                 #     analysis_df.to_excel(save_path, index=False, engine='openpyxl')

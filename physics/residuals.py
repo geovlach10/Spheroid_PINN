@@ -54,7 +54,7 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
     term41 = norm_coef_41 * (cb_hat * r_hat**2) # R^2 * C0 * koff * (1 + C0/Kd) * cb^ * r^2
 
     residual_eq1 = term11 - term21 + term31 - term41
-    loss_eq1 = pde_weights['eq1'] * torch.mean(residual_eq1**2)
+    loss_eq1 = pde_weights['weight_eq1'] * torch.mean(residual_eq1**2)
     ####################################################################################################################################
     #2nd equation 
     norm_coef_21 = 1.0 / (3600 * ctx.tau) # 1/sec
@@ -68,7 +68,7 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
     term24 = norm_coef_24 * cb_hat # (koff - kint) * cb^
 
     residual_eq2 = term21 - term22 + term23 - term24
-    loss_eq2 = pde_weights['eq2'] * torch.mean(residual_eq2**2)
+    loss_eq2 = pde_weights['weight_eq2'] * torch.mean(residual_eq2**2)
     ####################################################################################################################################
     # 3rd equation
     norm_coef_31 = 1.0 / 3600 / ctx.tau # 1/sec
@@ -78,7 +78,7 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
     term32 = norm_coef_32 * cb_hat  # kint * cb^
 
     residual_eq3 = term31 - term32
-    loss_eq3 = pde_weights['eq3'] * torch.mean(residual_eq3**2)
+    loss_eq3 = pde_weights['weight_eq3'] * torch.mean(residual_eq3**2)
     ####################################################################################################################################
 
     if term_by_term_analysis:
@@ -111,8 +111,8 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
     return loss_eq1, loss_eq2, loss_eq3 # Scalar
 
 def bc_loss_fn(approximator: PINN, ctx: PhysicsContext, data_center: PINNDataset, data_surface: PINNDataset, uptake=True):
-    weight_center = ctx.pde_weights['center']
-    weight_surface = ctx.pde_weights['surface']
+    weight_center = ctx.pde_weights['weight_center']
+    weight_surface = ctx.pde_weights['weight_surface']
     ####################################################################################################################################
     # @ r=0 (center)
     data_center = data_center.get_nondimentional_data()
@@ -146,7 +146,7 @@ def bc_loss_fn(approximator: PINN, ctx: PhysicsContext, data_center: PINNDataset
     return loss_center, loss_surface 
 
 def ic_loss_fn(approximator, data: PINNDataset, ctx: PhysicsContext):
-    weight = ctx.pde_weights['ic']
+    weight = ctx.pde_weights['weight_ic']
 
     data = data.get_nondimentional_data()
     r_hat = data[:,0:1].requires_grad_(True)

@@ -42,12 +42,12 @@ class PhysicsContext(nn.Module):
             'p_cl': nn.Parameter(torch.tensor(cfg['p_cl']), requires_grad=False), # (μm/sec) mass transfer coefficient for the clearance experiment
         })
         self.pde_weights = nn.ParameterDict({
-            'eq1': nn.Parameter(torch.tensor(cfg['eq1'])),
-            'eq2': nn.Parameter(torch.tensor(cfg['eq2'])),
-            'eq3': nn.Parameter(torch.tensor(cfg['eq3'])),
-            'center': nn.Parameter(torch.tensor(cfg['center'])),
-            'surface': nn.Parameter(torch.tensor(cfg['surface'])),
-            'ic': nn.Parameter(torch.tensor(cfg['ic']))
+            'weight_eq1': nn.Parameter(torch.tensor(cfg['eq1'])),
+            'weight_eq2': nn.Parameter(torch.tensor(cfg['eq2'])),
+            'weight_eq3': nn.Parameter(torch.tensor(cfg['eq3'])),
+            'weight_center': nn.Parameter(torch.tensor(cfg['center'])),
+            'weight_surface': nn.Parameter(torch.tensor(cfg['surface'])),
+            'weight_ic': nn.Parameter(torch.tensor(cfg['ic']))
         })
 
     def get_pde_parameters(self):
