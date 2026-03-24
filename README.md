@@ -63,8 +63,8 @@ $$
 
 $$
 \begin{aligned}
-& \operatorname{res}(r=0)=\left.\frac{\partial}{\partial \hat{r}} \frac{\hat{C}_{t}}{\varphi}\right|_{r=0}-0 \\
-& \operatorname{res}(r=R)=\boldsymbol{W} \cdot \varphi \cdot \frac{\partial}{\partial \hat{r}}\left(\frac{\hat{C}_{f}}{\varphi}\right)-P_{\mathrm{ap} / \mathrm{cl}}\left(1-\left.\frac{\hat{C}_{f}}{\varphi}\right|_{r=R}\right)
+& \mathrm{res}(r=0)=\left.\frac{\partial}{\partial \hat{r}} \frac{\hat{C}_{t}}{\varphi}\right|_{r=0}-0 \\
+& \mathrm{res}(r=R)=\boldsymbol{W} \cdot \varphi \cdot \frac{\partial}{\partial \hat{r}}\left(\frac{\hat{C}_{f}}{\varphi}\right)-P_{\mathrm{ap} / \mathrm{cl}}\left(1-\left.\frac{\hat{C}_{f}}{\varphi}\right|_{r=R}\right)
 \end{aligned}
 $$
 
@@ -75,9 +75,9 @@ $\boldsymbol{W}=\frac{D}{R}[=] \frac{\mu \mathrm{m}^{2}}{\sec } \frac{1}{\mu \ma
 
 $$
 \begin{aligned}
-& \operatorname{res}_{f}(t=0)=\hat{c}_{t}-0 \\
-& \operatorname{res}_{b}(t=0)=\hat{c}_{b}-0 \\
-& \operatorname{res}_{i}(t=0)=\hat{c}_{i}-0
+& \mathrm{res}_{f}(t=0)=\hat{c}_{t}-0 \\
+& \mathrm{res}_{b}(t=0)=\hat{c}_{b}-0 \\
+& \mathrm{res}_{i}(t=0)=\hat{c}_{i}-0
 \end{aligned}
 $$
 
