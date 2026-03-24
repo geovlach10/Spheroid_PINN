@@ -50,7 +50,7 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
 
     term11 = norm_coef_11 * (phi * cf_tilde_t * r_hat**2) #R^2 * C0 / (3600 * tau) * φ * d/dt(cf^/φ) * r^2 
     term21 = norm_coef_21 * diffucion_term # D * C0 * d/dr(r^2 * φ * d/dr(cf^/φ))
-    term31 = norm_coef_31 * (cf_tilde * r_hat**2) # R^2 * C0 * koff/kd * Rt * ρ^2 * cf^/φ
+    term31 = norm_coef_31 * (cf_tilde * r_hat**2) # R^2 * C0 * koff/kd * Rt * r^2 * cf^/φ
     term41 = norm_coef_41 * (cb_hat * r_hat**2) # R^2 * C0 * koff * (1 + C0/Kd) * cb^ * r^2
 
     residual_eq1 = term11 - term21 + term31 - term41
@@ -74,7 +74,7 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
     norm_coef_31 = 1.0 / 3600 / ctx.tau # 1/sec
     norm_coef_32 = pde_parameters['k_int']
 
-    term31 = norm_coef_31 * ci_hat_t # (1 / 3600 / τ) * ci^ 
+    term31 = norm_coef_31 * ci_hat_t # (1 / 3600 / τ) * d/dt(ci^) 
     term32 = norm_coef_32 * cb_hat  # kint * cb^
 
     residual_eq3 = term31 - term32
@@ -101,7 +101,7 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
                 'koff/kd * C0 * cf^/φ * cb^': term23.detach().cpu().numpy().flatten(),
                 '(koff - kint) * cb^': term24.detach().cpu().numpy().flatten(),
                 'residual_eq2': residual_eq2.detach().cpu().numpy().flatten(),
-                '(1 / 3600 / τ) * ci^': term31.detach().cpu().numpy().flatten(),
+                '(1 / 3600 / τ) * d/dt(ci^)': term31.detach().cpu().numpy().flatten(),
                 'kint * cb^': term32.detach().cpu().numpy().flatten(),
                 'residual_eq3': residual_eq3.detach().cpu().numpy().flatten()
                 }
@@ -138,27 +138,27 @@ def bc_loss_fn(approximator: PINN, ctx: PhysicsContext, data_center: PINNDataset
 
     norm_coef = ctx.pde_parameters['d'] / ctx.R # D*R
 
-    term1 = norm_coef * cf_surface_tilde_r # D/R * d/dr(cf^/φ)
+    term1 = norm_coef * cf_surface_tilde_r # D/R * φ * d/dr(cf^/φ)
     term2 = ctx.pde_parameters['p_up'] * (1 - cf_surface_tilde) if uptake==True else ctx.pde_parameters['p_cl'] * (1 - cf_surface_tilde) # Pup * (1 - cf^/φ)
 
     residual_surface = term1 - term2
     loss_surface = weight_surface * torch.mean(residual_surface**2)
 
     if return_df:
-        return (pd.DataFrame({
+        return (pd.DataFrame({      # r=0
                'r^': r_center_hat.detach().cpu().numpy().flatten(),
                't^': t_center_hat.detach().cpu().numpy().flatten(),
                'cf^': cf_center_hat.detach().cpu().numpy().flatten(),
                'd/dr(cf^)': cf_center_hat_r.detach().cpu().numpy().flatten(),
                'residual_center': residual_center.detach().cpu().numpy().flatten()
                }),
-                pd.DataFrame({
+                pd.DataFrame({      # r=R
                     'r^': r_surface_hat.detach().cpu().numpy().flatten(),
                     't^': t_surface_hat.detach().cpu().numpy().flatten(),
                     'phi': phi.detach().cpu().numpy().flatten(),
                     'cf^': cf_surface_hat.detach().cpu().numpy().flatten(),
                     'cf^/phi': cf_surface_tilde.detach().cpu().numpy().flatten(),
-                    'D/R * d/dr(cf^/φ)': term1.detach().cpu().numpy().flatten(),
+                    'D/R * φ * d/dr(cf^/φ)': term1.detach().cpu().numpy().flatten(),
                     'Pup * (1 - cf^/φ)': term2.detach().cpu().numpy().flatten(),
                     'residual_surface': residual_surface.detach().cpu().numpy().flatten()
                 })
