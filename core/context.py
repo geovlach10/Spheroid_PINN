@@ -40,7 +40,8 @@ class PhysicsContext(nn.Module):
             'r_t': nn.Parameter(torch.tensor(cfg['r_t']), requires_grad=False), # (nM) the initial unbound receptor concentration.
             'p_up': nn.Parameter(torch.tensor(cfg['p_up']), requires_grad=False), # (μm/sec) mass transfer coefficient for the uptake experiment
             'p_cl': nn.Parameter(torch.tensor(cfg['p_cl']), requires_grad=False), # (μm/sec) mass transfer coefficient for the clearance experiment
-        })
+        }).to(self.device)
+
         self.pde_weights = nn.ParameterDict({
             'weight_eq1': nn.Parameter(torch.tensor(cfg['eq1'])),
             'weight_eq2': nn.Parameter(torch.tensor(cfg['eq2'])),
@@ -48,7 +49,20 @@ class PhysicsContext(nn.Module):
             'weight_center': nn.Parameter(torch.tensor(cfg['center'])),
             'weight_surface': nn.Parameter(torch.tensor(cfg['surface'])),
             'weight_ic': nn.Parameter(torch.tensor(cfg['ic']))
-        })
+        }).to(self.device)
+        
+        self.pi = self._calculate_pi_groups()
+
+    def _calculate_pi_groups(self):
+        p = self.pde_parameters
+        k_on = p['k_off'] / p['k_d']
+        return {
+            'diff': p['d'] * (1.0 / self.R**2) * 3600 * self.tau,
+            'on': k_on * self.C0 * 3600 * self.tau,
+            'off': p['k_off'] * 3600 * self.tau,
+            'int': p['k_int'] * 3600 * self.tau,
+            's_ratio': p['r_t'] / self.C0
+        }
 
     def get_pde_parameters(self):
         return {key: value for key, value in self.pde_parameters.items()}
