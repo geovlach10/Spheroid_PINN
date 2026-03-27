@@ -43,14 +43,16 @@ class PhysicsContext(nn.Module):
         }).to(self.device)
 
         self.pde_weights = nn.ParameterDict({
-            'weight_eq1': nn.Parameter(torch.tensor(cfg['eq1'])),
-            'weight_eq2': nn.Parameter(torch.tensor(cfg['eq2'])),
-            'weight_eq3': nn.Parameter(torch.tensor(cfg['eq3'])),
-            'weight_center': nn.Parameter(torch.tensor(cfg['center'])),
-            'weight_surface': nn.Parameter(torch.tensor(cfg['surface'])),
-            'weight_ic': nn.Parameter(torch.tensor(cfg['ic']))
+            'eq_f': nn.Parameter(torch.tensor(cfg['eq1'])),
+            'eq_b': nn.Parameter(torch.tensor(cfg['eq2'])),
+            'eq_i': nn.Parameter(torch.tensor(cfg['eq3'])),
+            'center': nn.Parameter(torch.tensor(cfg['center'])),
+            'surface': nn.Parameter(torch.tensor(cfg['surface'])),
+            'ic_f': nn.Parameter(torch.tensor(cfg['ic'])),
+            'ic_b': nn.Parameter(torch.tensor(cfg['ic'])),
+            'ic_i': nn.Parameter(torch.tensor(cfg['ic']))
         }).to(self.device)
-        
+
         self.pi = self._calculate_pi_groups()
 
     def _calculate_pi_groups(self):
@@ -61,8 +63,12 @@ class PhysicsContext(nn.Module):
             'on': k_on * self.C0 * 3600 * self.tau,
             'off': p['k_off'] * 3600 * self.tau,
             'int': p['k_int'] * 3600 * self.tau,
-            's_ratio': p['r_t'] / self.C0
+            's_ratio': p['r_t'] / self.C0,
+            'surface': self.R / p['d'] * p['p_up'] 
         }
+    
+    def get_phi(self, r: torch.Tensor):
+        return 0.44 * r**3.2 + 0.56
 
     def get_pde_parameters(self):
         return {key: value for key, value in self.pde_parameters.items()}

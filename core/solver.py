@@ -7,10 +7,12 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
+from wcwidth import center
 
 from core.data import DataGenerator, PINNDataset
 from core.model import PINN
 from physics.residuals import pde_loss_fn, bc_loss_fn, ic_loss_fn, sensor_loss_fn
+from physics.residuals_ver2 import get_losses
 from core.context import PhysicsContext
 from utils.logger import log_to_excel
 
@@ -56,9 +58,9 @@ class PINNSolver():
         # Dataset atttributes
         self.generator = DataGenerator(seed=self.seed)
         self.pde_training_dataset = PINNDataset(n_points=n_pde, sampling_type='lhc', generator=self.generator, device=self.device, dtype=self.dtype, name='pde')
-        self.bc_center_training_dataset = PINNDataset(n_points=200, sampling_type='center', generator=self.generator, device=self.device, dtype=self.dtype, name='symmetry')
-        self.bc_surface_training_dataset = PINNDataset(n_points=200, sampling_type='surface', generator=self.generator, device=self.device, dtype=self.dtype, name='surface')
-        self.ic_training_dataset = PINNDataset(n_points=100, sampling_type='initial', generator=self.generator, device=self.device, dtype=self.dtype, name='ic')
+        self.center_training_dataset = PINNDataset(n_points=200, sampling_type='center', generator=self.generator, device=self.device, dtype=self.dtype, name='symmetry')
+        self.surface_training_dataset = PINNDataset(n_points=200, sampling_type='surface', generator=self.generator, device=self.device, dtype=self.dtype, name='surface')
+        self.initial_training_dataset = PINNDataset(n_points=100, sampling_type='initial', generator=self.generator, device=self.device, dtype=self.dtype, name='ic')
         self.sensor_training_dataset = None
         self.new_pde_training_dataset = None
 
@@ -75,35 +77,8 @@ class PINNSolver():
         }
 
         # History attributes
-        self.loss_history = {
-          'loss': [],
-          'loss_pde_eq1': [],
-          'loss_pde_eq2': [],
-          'loss_pde_eq3': [],
-          'loss_bc_center': [],
-          'loss_bc_surface': [],
-          'loss_ic': [],
-          'loss_sensor': []
-        }
-        self.pde_weights_history = {
-          'eq1': [],
-          'eq2': [],
-          'eq3': [],
-          'center': [],
-          'surface': [],
-          'ic': [],
-          'sensor': []
-        }
-        self.pde_parameters_history = {
-          'd': [],
-          'k_off': [],
-          'k_d': [],
-          'k_int': [],
-          'r_t': [],
-          'p_up': [],
-          'p_cl': []
-        }
-
+        self.history = {'losses': {}, 'weights': {}, 'params': {} }
+       
         # Best state atttributes
         self.best_loss = 1e30
         self.best_model_state = None
@@ -117,9 +92,9 @@ class PINNSolver():
         print(f'data generator seed: {self.generator.seed}\napproximator seed: {self.approximator.seed}\ndevice: {self.device}\ndtype: {self.dtype}')
         print(f' {10 * "--"} Dataset information {10 * "--"} ')
         print(f'PDE dataset: {self.pde_training_dataset.n_points} points, sampling type: {self.pde_training_dataset.sampling_type}, device: {self.pde_training_dataset.device}, dtype: {self.pde_training_dataset.dtype}')
-        print(f'Boundary dataset (left): {self.bc_center_training_dataset.n_points} points, device: {self.bc_center_training_dataset.device}, dtype: {self.bc_center_training_dataset.dtype}')
-        print(f'Boundary dataset (right): {self.bc_surface_training_dataset.n_points} points, device: {self.bc_surface_training_dataset.device}, dtype: {self.bc_surface_training_dataset.dtype}')
-        print(f'Initial condition dataset: {self.ic_training_dataset.n_points} points, device: {self.ic_training_dataset.device}, dtype: {self.ic_training_dataset.dtype}')
+        print(f'Boundary dataset (left): {self.center_training_dataset.n_points} points, device: {self.center_training_dataset.device}, dtype: {self.center_training_dataset.dtype}')
+        print(f'Boundary dataset (right): {self.surface_training_dataset.n_points} points, device: {self.surface_training_dataset.device}, dtype: {self.surface_training_dataset.dtype}')
+        print(f'Initial condition dataset: {self.initial_training_dataset.n_points} points, device: {self.initial_training_dataset.device}, dtype: {self.initial_training_dataset.dtype}')
         print(f' {10 * "--"} Neural network information {10 * "--"} ')
         print(f'Neural network with {self.approximator.n_layers} layers and {self.approximator.n_neurons} neurons in each layer')
         print(f'Output size: {self.approximator.output_dim} x (batch_size * 1)')
@@ -144,80 +119,37 @@ class PINNSolver():
             print(f'\ninspect vanilla optimizer\n{optimizer}')            
 
             for epoch in range(epochs):
-                # make sure the optimizers dont sum up previeusly cimputed gradients
+                # Make sure the optimizers dont sum up previeusly computed gradients
                 optimizer.zero_grad()
 
-                # compute the criterion imported form physics.py
-                # this step acctualy calles the neural network so is the forward step
+                # Traverse the graph forword.
+                losses = get_losses(model=self.approximator, pde=self.pde_training_dataset, center=self.center_training_dataset, surface=self.surface_training_dataset, initial=self.initial_training_dataset, ctx=self.ctx)
+                loss = losses['total']
 
-                # # add a possitivity term
-                # c1, c2, c3 = self.approximator(self.pde_training_dataset.r, self.pde_training_dataset.t)
-                # loss_possitivity = torch.mean(torch.relu(-c1)**2) + torch.mean(torch.relu(-c2)**2) + torch.mean(torch.relu(-c3)**2)
-
-                loss_pde_eq1, loss_pde_eq2, loss_pde_eq3 = self.pde_loss_fn(approximator=self.approximator, data=self.pde_training_dataset, ctx=self.ctx)
-                loss_bc_center, loss_bc_surface = self.bc_loss_fn(approximator=self.approximator, data_center=self.bc_center_training_dataset, data_surface=self.bc_surface_training_dataset, ctx=self.ctx)
-                loss_ic = self.ic_loss_fn(self.approximator, self.ic_training_dataset, ctx=self.ctx)
-                loss_sensor = self.sensor_loss_fn(self.approximator, self.sensor_training_dataset, self.sensor_output) if self.sensor_training_dataset is not None else torch.tensor(0.0)
-                loss = loss_pde_eq1 + loss_pde_eq2 + loss_pde_eq3 + loss_bc_center + loss_bc_surface + loss_ic + loss_sensor
-
-                # traverse the graph backwords to populate the .grad attribute of leaf tensors
+                # Traverse the graph backwords to populate the .grad attribute of leaf tensors.
                 loss.backward()
-                self.loss_history['loss'].append(loss.item())
-                self.loss_history['loss_pde_eq1'].append(loss_pde_eq1.item())
-                self.loss_history['loss_pde_eq2'].append(loss_pde_eq2.item())
-                self.loss_history['loss_pde_eq3'].append(loss_pde_eq3.item())
-                self.loss_history['loss_bc_center'].append(loss_bc_center.item())
-                self.loss_history['loss_bc_surface'].append(loss_bc_surface.item())
-                self.loss_history['loss_ic'].append(loss_ic.item())
-                self.loss_history['loss_sensor'].append(loss_sensor.item()) if problem_type == 'inference' else None
-                self.coefficients_history['d'].append(self.approximator.coefficients['d'].item()) if problem_type == 'inference' else None
-                self.coefficients_history['k_off'].append(self.approximator.coefficients['k_off'].item()) if problem_type == 'inference' else None
-                self.coefficients_history['k_int'].append(self.approximator.coefficients['k_int'].item()) if problem_type == 'inference' else None
-                self.coefficients_history['k_d'].append(self.approximator.coefficients['k_d'].item()) if problem_type == 'inference' else None
-                self.coefficients_history['r_t'].append(self.approximator.coefficients['r_t'].item()) if problem_type == 'inference' else None
-                self.coefficients_history['p_up'].append(self.approximator.coefficients['p_up'].item()) if problem_type == 'inference' else None
-                self.coefficients_history['p_cl'].append(self.approximator.coefficients['p_cl'].item()) if problem_type == 'inference' else None
                 
+                # Keep a record of everything.
+                current_pde_weights = self.ctx.get_pde_weights()
+                current_pde_params = self.ctx.get_pde_parameters()
+                [self.history['losses'].setdefault(key, []).append(value.item()) for key, value in losses.items()]
+                [self.history['weights'].setdefault(key, []).append(value.item()) for key, value in current_pde_weights.items()]
+                [self.history['params'].setdefault(key, []).append(value.item()) for key, value in current_pde_params.items()]
                 
-                # Limits the 'global norm' of all gradients to 1.0
-                # torch.nn.utils.clip_grad_norm_(self.approximator.parameters(), max_norm=1.0)
-
-                # Update the parameters which has been passed to the optimizers accordimg to some optimization algorithm
-                # the difference between the network vs the network optimization lies in the direction of the gradient descent.ascent algorithm
-                optimizer.step()
-
-                current_loss = loss.item()
-                # if current_loss < self.best_loss:
-                #     self.best_loss = current_loss
-                #     self.best_model_state = copy.deepcopy(self.approximator.state_dict())
-                #     print(f'new best loss saved in RAM --> {self.best_loss} at epoch {epoch}')
-
-                # # recovery if loss explodes over 5x
-                # if epoch > 10000 and epoch % 50 == 0:
-                #     if  current_loss > self.best_loss * 5:
-                #         print(f' --- explosion at epoch {epoch}! reverting to loss {self.best_loss:.4e} ---')
-                #         self.approximator.load_state_dict(self.best_model_state)
-                #         # manual weight decay
-                #         for param_group in optimizer.param_groups:
-                #             param_group['lr'] *= 0.5
-                #             print(f"new lr: {param_group['lr']}")
+                # Update the values.
+                optimizer.step()    
                 
-                
+                # Log to screen.
                 if epoch == 0:
-                    header = f"{'Epoch':^10} | {'Total':^10} | {'pde1':^10} | {'pde2':^10} | {'pde3':^10} | {'bc0':^10} | {'bcR':^10} | {'ic':^10} "
+                    header = f"{'Epoch':^10} | {'Total':^10} | {'pde_f':^10} | {'pde_b':^10} | {'pde_i':^10} | {'bc0':^10} | {'bcR':^10} | {'ic_f':^10} | {'ic_b':^10} | {'ic_i':^10} "
                     print('-' * len(header))
                     print(header)
                     print('-' * len(header))
                 if epoch % 200 == 0:
-                    line = f"{epoch:^10} | {loss.item():^10.4e} | {loss_pde_eq1.item():^10.4e} | {loss_pde_eq2.item():^10.4e} | {loss_pde_eq3.item():^10.4e} | {loss_bc_center.item():^10.4e} | {loss_bc_surface.item():^10.4e} | {loss_ic.item():^10.4e} "
+                    line = f"{epoch:^10} | {losses['total'].item():^10.4e} | {losses['pde_f'].item():^10.4e} | {losses['pde_b'].item():^10.4e} | {losses['pde_i'].item():^10.4e} | {losses['center'].item():^10.4e} | {losses['surface'].item():^10.4e} | {losses['ic_f'].item():^10.4e} | {losses['ic_b'].item():^10.4e} | {losses['ic_i'].item():^10.4e}"
                     print(line)
                 if epoch % 1000 == 0:
-                    log_to_excel(epoch=epoch, approximator=self.approximator, pde_dataset=self.pde_training_dataset, center_dataset=self.bc_center_training_dataset, surface_dataset=self.bc_surface_training_dataset, ic_dataset=self.ic_training_dataset, pde_loss_fn=self.pde_loss_fn, bc_loss_fn=self.bc_loss_fn,ic_loss_fn=self.ic_loss_fn, ctx=self.ctx)
-                #     analysis_df = pde_loss_fn(approximator=self.approximator, data=self.pde_training_dataset, ctx=self.ctx,  term_by_term_analysis=True)
-                #     save_path = f'results/term_by_term_analysis_epoch_{epoch}.xlsx'
-                #     analysis_df.to_excel(save_path, index=False, engine='openpyxl')
-                #     print(f'term by term analysis report saved to {save_path}')
-                    # print(f"Epoch: {self.current_iter}\n[Loss: {loss.item():e}] - [Eq1: {loss_pde_eq1.item():e}, Eq2: {loss_pde_eq2.item():e}, Eq3: {loss_pde_eq2.item():e}] - [BC_0: {loss_bc_center.item():e}] - [BC_R: {loss_bc_surface.item():e}] - [IC: {loss_ic.item():e}] - [Sensor: {loss_sensor.item():e}] - [d: {self.approximator.coefficients['d'].item():e}]\n{100 * '--'}")
+                    log_to_excel(epoch=epoch, approximator=self.approximator, pde_dataset=self.pde_training_dataset, center_dataset=self.bc_center_training_dataset, surface_dataset=self.bc_surface_training_dataset, ic_dataset=self.initial_training_dataset, pde_loss_fn=self.pde_loss_fn, bc_loss_fn=self.bc_loss_fn,ic_loss_fn=self.ic_loss_fn, ctx=self.ctx)
                 self.current_iter += 1
 
         if method == 'random_resampling':
@@ -241,7 +173,7 @@ class PINNSolver():
                 # this step acctualy calles the neural network so is the forward step
                 loss_pde_eq1, loss_pde_eq2, loss_pde_eq3 = self.pde_loss_fn(approximator=self.approximator, data=self.pde_training_dataset)
                 loss_bc_center, loss_bc_surface = self.bc_loss_fn(approximator=self.approximator, data_center=self.bc_center_training_dataset, data_surface=self.bc_surface_training_dataset)
-                loss_ic = self.ic_loss_fn(self.approximator, self.ic_training_dataset)
+                loss_ic = self.ic_loss_fn(self.approximator, self.initial_training_dataset)
                 loss_sensor = self.sensor_loss_fn(self.approximator, self.sensor_training_dataset, self.sensor_output) if self.sensor_training_dataset is not None else torch.tensor(0.0)
                 loss = loss_pde_eq1 + loss_pde_eq2 + loss_pde_eq3 + loss_bc_center + loss_bc_surface + loss_ic + loss_sensor
 
@@ -286,7 +218,7 @@ class PINNSolver():
                 # this step acctualy calles the neural network so is the forward step
                 loss_pde_eq1, loss_pde_eq2, loss_pde_eq3 = self.pde_loss_fn(approximator=self.approximator, data=self.pde_training_dataset)
                 loss_bc_center, loss_bc_surface = self.bc_loss_fn(approximator=self.approximator, data_center=self.bc_center_training_dataset, data_surface=self.bc_surface_training_dataset)
-                loss_ic = self.ic_loss_fn(self.approximator, self.ic_training_dataset)
+                loss_ic = self.ic_loss_fn(self.approximator, self.initial_training_dataset)
                 loss_sensor = self.sensor_loss_fn(self.approximator, self.sensor_training_dataset, self.sensor_output) if self.sensor_training_dataset is not None else torch.tensor(0.0)
                 loss = loss_pde_eq1 + loss_pde_eq2 + loss_pde_eq3 + loss_bc_center + loss_bc_surface + loss_ic + loss_sensor
                 
@@ -334,7 +266,7 @@ class PINNSolver():
                 # this step acctualy calles the neural network so is the forward step
                 loss_pde_eq1, loss_pde_eq2, loss_pde_eq3 = self.pde_loss_fn(approximator=self.approximator, data=self.pde_training_dataset)
                 loss_bc_center, loss_bc_surface = self.bc_loss_fn(approximator=self.approximator, data_center=self.bc_center_training_dataset, data_surface=self.bc_surface_training_dataset)
-                loss_ic = self.ic_loss_fn(self.approximator, self.ic_training_dataset)
+                loss_ic = self.ic_loss_fn(self.approximator, self.initial_training_dataset)
                 loss_sensor = self.sensor_loss_fn(self.approximator, self.sensor_training_dataset, self.sensor_output) if self.sensor_training_dataset is not None else torch.tensor(0.0)
                 loss = loss_pde_eq1 + loss_pde_eq2 + loss_pde_eq3 + loss_bc_center + loss_bc_surface + loss_ic + loss_sensor
 
