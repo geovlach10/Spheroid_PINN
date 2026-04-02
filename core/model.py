@@ -33,7 +33,7 @@ class PINN(nn.Module):
         u = torch.cat((x, t), dim=1)
         for i in range(len(self.layers) - 1):
              u = self.activation(self.layers[i](u))
-        u = self.layers[-1](u)
+        u = F.softplus(self.layers[-1](u)) # ensure positivity of the output
         return u[:, 0].view(-1, 1), u[:, 1].view(-1, 1), u[:, 2].view(-1, 1)
     
     def show_if_requires_grad(self):
