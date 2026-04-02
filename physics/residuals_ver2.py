@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from core.model import PINN
 from core.data import PINNDataset
 from core.context import PhysicsContext
@@ -28,13 +29,13 @@ def get_pde_residuals(model: PINN, dataset: PINNDataset, ctx: PhysicsContext):
     flux_r = torch.autograd.grad(flux, r, torch.ones_like(flux), create_graph=True)[0]
 
     # Calculate pde terms
-    diffusion = (1.0 / r**2) * flux_r
-    association = pi['on'] * cf/phi * (1 - cb)
+    diffusion = pi['diff'] * flux_r
+    association = pi['on'] * cf/phi * (1 - cb) 
     dissociation = pi['off'] * cb
     internalization = pi['int'] * cb
 
     return {
-        'f': phi * cf_pore_t - pi['diff'] * diffusion + pi['s_ratio'] * (association - dissociation),
+        'f': phi * cf_pore_t * (r**2) - diffusion - pi['s_ratio'] * (association - dissociation) * (r**2),
         'b': cb_t - association + dissociation + internalization,
         'i':  ci_t - internalization
     }
@@ -69,22 +70,22 @@ def get_ic_residual(model: PINN, dataset: PINNDataset, ctx: PhysicsContext):
     r = dataset.data[:,0:1].requires_grad_(True)
     t = dataset.data[:,1:2].requires_grad_(True)
     
-    phi = ctx.get_phi(r)
-    cf_pore = cf / phi
-
     cf, cb, ci = model(r, t)
-    
-    cf_pore_t = torch.autograd.grad(cf_pore, t, torch.ones_like(cf_pore), create_graph=True)[0]
+
+    phi = ctx.get_phi(r)
+    # cf_pore = cf / phi
+
+    cf_t = torch.autograd.grad(cf, t, torch.ones_like(cf), create_graph=True)[0]
     cb_t = torch.autograd.grad(cb, t, torch.ones_like(cb), create_graph=True)[0]
     ci_t = torch.autograd.grad(ci, t, torch.ones_like(ci), create_graph=True)[0]
 
     return {
-        'f': cf_pore_t,
-        'b': cb_t,
-        'i': ci_t
+        'f': cf_t - 0,
+        'b': cb_t - 0,
+        'i': ci_t - 0
     }
 
-def get_losses(model: PINN, pde: PINNDataset, center: PINNDataset, surface: PINNDataset, initial: PINNDataset, ctx: PhysicsContext):
+def get_all_losses(model: PINN, pde: PINNDataset, center: PINNDataset, surface: PINNDataset, initial: PINNDataset, ctx: PhysicsContext):
     w = ctx.get_pde_weights()
     
     pde_res = get_pde_residuals(model, pde, ctx)
