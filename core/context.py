@@ -1,10 +1,13 @@
+import pandas as pd
+from tabulate import tabulate
+
 import torch
 import torch.nn as nn
 
-physics_configuration = {
+cfg = {
     # physical scale constants
     'R': 200,
-    'tau': 50,
+    'tau': 24,
     'C0': 60,
     # pde parameters
     'd': 8.38,
@@ -76,4 +79,20 @@ class PhysicsContext(nn.Module):
     def get_pde_weights(self):
         return {key: value for key, value in self.pde_weights.items()}
             
-        
+    def __repr__(self):
+        scaling = {
+            'R(μm)': f'{self.R:.2f}',
+            'tau(h)': f'{self.tau:.2f}',
+            'C0(nM)': f'{self.C0:.2f}'
+        }
+        df_scaling = pd.DataFrame(scaling.items(), columns=['scaling parameters', 'value'])
+        df_pde_params = pd.DataFrame(self.get_pde_parameters().items(), columns=['pde parameters', 'value'])
+        df_pde_weights = pd.DataFrame(self.get_pde_weights().items(), columns=['pde weights', 'value'])
+        df_pi = pd.DataFrame(self.pi.items(), columns=['pi groups', 'value'])
+    
+        df = pd.concat([df_scaling, df_pde_params, df_pde_weights, df_pi], axis=1)
+        table = tabulate(df, headers='keys', tablefmt='simple', showindex=False, floatfmt=(None, '.1f', None, '.2e', None, '.4f', None, '.6f'))
+        header = f'{"-" * 110}\n{"Physics Context":^{110}}\n{"-" * 110}'
+        return f'{header}' \
+               f'\n{table}' \
+               f'\n{"-" * 110}'
