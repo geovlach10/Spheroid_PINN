@@ -1,9 +1,52 @@
+from matplotlib import table
+
 from core.data import PINNDataset
 from core.model import PINN
 from core.context import PhysicsContext
 import os
 import zipfile
 import pandas as pd
+
+from IPython.display import display, update_display
+from tqdm.notebook import tqdm
+
+class PINNLoger():
+    def __init__(self, num_epochs):
+        self.num_epochs = num_epochs
+        self.pbar = tqdm(range(self.num_epochs), desc='Training PINN', unit='epoch')
+        self.history = {'loss': {}, 'weights': {}, 'parameters': {}}
+        self.table_handle = display(pd.DataFrame(), display_id=True)
+        self.table = []
+
+    def update(self, epoch, losses: dict, weights: dict, parameters: dict, every=1000):
+        # Update history
+        for key, value in losses.items():
+            self.history['loss'].setdefault(key, []).append(value.item())
+        for key, value in weights.items():
+            self.history['weights'].setdefault(key, []).append(value.item())
+        for key, value in parameters.items():
+            self.history['parameters'].setdefault(key, []).append(value.item())
+
+        # Update progress bar
+        self.pbar.update(1)
+        self.pbar.set_postfix({key: f'{value.item():.4e}' for key, value in losses.items()})
+
+        # Update table display
+        if epoch % every == 0:
+            row = {key: f'{value[-1]:.4e}' for key, value in self.history['loss'].items()}
+            row['epoch'] = epoch
+            self.table.append(row)
+
+            df = pd.DataFrame(self.table)
+            cols = ['epoch'] + [c for c in df.columns if c != 'epoch']
+            df = df[cols]
+
+            self.table_handle.update(df)
+    
+    def finalize(self):
+        self.pbar.close()
+        return pd.DataFrame(self.history)
+    
 
 def log_to_excel(epoch, approximator: PINN, pde_dataset: PINNDataset, center_dataset: PINNDataset, surface_dataset: PINNDataset, ic_dataset: PINNDataset, pde_loss_fn, bc_loss_fn, ic_loss_fn, ctx: PhysicsContext, first_run=False):
     excel_path = 'results/pinn_physics_report.xlsx'
