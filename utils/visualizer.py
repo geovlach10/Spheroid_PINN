@@ -1,4 +1,5 @@
 from turtle import color
+from venv import create
 
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
@@ -12,6 +13,7 @@ import cv2
 import glob
 import os
 import re
+import shutil
 
 class PINNVisualizer():
     def __init__(self, context, grid_size=50):
@@ -61,13 +63,14 @@ class PINNVisualizer():
 class Static3DVisualizer():
     def __init__(self, r_size, t_size, save_dir='results/frames'):
         self.save_dir = save_dir
-        if not os.path.exists(self.save_dir):
-            os.makedirs(self.save_dir)
+        if os.path.exists(self.save_dir):
+            shutil.rmtree(self.save_dir)
+        os.makedirs(self.save_dir)
 
         self.r_size = r_size
         self.t_size = t_size
-
         self.R, self.T = np.meshgrid(np.linspace(0, 1, self.r_size), np.linspace(0, 1, self.t_size))
+        
         self.display_handle = display(None, display_id=True)
 
     def update(self, what: str, update_every, model, device, epoch):
@@ -94,11 +97,28 @@ class Static3DVisualizer():
             self.display_handle.update(fig)
             plt.close(fig)
 
-def create_pinn_video(image_folder: str, video_name: str, fps: int = 10):
-    path = f'{image_folder}/*.png'
-    images = glob.glob(path)
+def create_folder_if_not_exists(folder_path):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    print(f'Folder {folder_path} is ready.')
+
+def cleanup_folder(folder_path):
+    if os.path.exists(folder_path):
+        for filename in os.listdir(folder_path):
+            os.remove(os.path.join(folder_path, filename))
+        print(f'Cleaned up folder: {folder_path}')
+    else:
+        os.makedirs(folder_path)
+        print(f'Created folder: {folder_path}')
+    
+
+
+def create_pinn_video(image_folder: str, video_folder: str, fps: int = 10):
+
+    image_path = f'{image_folder}/*.png'
+    images = glob.glob(image_path)
     if not images:
-        print(f'No images found in {image_folder}. Please check the path and try again.')
+        print(f'No images found in {image_folder}. Please check the image_path and try again.')
         return
     lambda_key = lambda s: [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
     images.sort(key=lambda_key)
@@ -106,12 +126,14 @@ def create_pinn_video(image_folder: str, video_name: str, fps: int = 10):
     frame = cv2.imread(images[0])
     height, width, layers = frame.shape
 
+    video_path = os.path.join('results', video_folder)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video = cv2.VideoWriter(f'results/{video_name}.mp4', fourcc=fourcc, fps=fps, frameSize=(width, height))
+    video = cv2.VideoWriter(video_path, fourcc=fourcc, fps=fps, frameSize=(width, height))
 
-    print(f'Creating video {video_name}.mp4 from images in {image_folder} at {fps} fps...')
+    # Stiching images into video
+    print(f'Creating video {video_folder} from images in {image_folder} at {fps} fps...')
     for image in images:
         video.write(cv2.imread(image))
 
     video.release()
-    print(f'Video {video_name}.mp4 created successfully!')
+    print(f'Video {video_folder} created successfully!')
