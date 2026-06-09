@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import deepxde as dde
 
 class ModifiedPINN(nn.Module):
     def __init__(self, in_dim=2, out_dim=3, hidden_dim=256, num_layers=4):

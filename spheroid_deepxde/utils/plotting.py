@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import deepxde as dde
 
 def scatter_collocation_points(data: dde.data.TimePDE):
@@ -13,9 +14,7 @@ def scatter_collocation_points(data: dde.data.TimePDE):
     plt.grid(True, linestyle='--', alpha=0.35)
     plt.show()
 
-import matplotlib.pyplot as plt
-import numpy as np
-def plot_2d_liposome(model, time_list, C_scale=60, r_scale=200, t_scale=24, save_path=None, lambda_phi=None):
+def plot_2d_liposome(model, time_list, C_scale=60, r_scale=200, t_scale=24, save_path=None, lambda_phi=None, title: str=None):
     x = np.linspace(0, 1, 100)
     phi = lambda_phi(x)
     plt.figure(figsize=(8, 6))
@@ -25,30 +24,30 @@ def plot_2d_liposome(model, time_list, C_scale=60, r_scale=200, t_scale=24, save
         u = model.predict(xt)
         y = u * phi.reshape(-1, 1) * C_scale
         plt.scatter(xt[:, 0:1] * r_scale, y, s=10, alpha=0.5, label=f't={t*t_scale}h')
-    plt.plot(x * r_scale, phi * r_scale, 'k--', label='Porosity Profile')
-    plt.xlabel('Radius')
-    plt.ylabel('Concentration % of Csol')
-    plt.title('LIPOSOME PROFILES\n(non-binding non-reacting) - center/surface hard constrained')
+    plt.plot(x * r_scale, phi * r_scale, 'k--', label='Porosity Profile') if lambda_phi is not None else None
+    plt.xlabel('r')
+    plt.ylabel('C / Csol')
+    plt.title(f'{title}')
     plt.legend()
     plt.grid(alpha=0.5)
-    plt.savefig(f'{save_path}/non_binding_non_reacting_liposomes_profiles.png', dpi=300) if save_path is not None else None
+    plt.savefig(f'{save_path}/{title}.png', dpi=300) if save_path == True else None
     plt.show()
     
-def plot_2d_antibody(model, time_list, C_scale=60, r_scale=200, t_scale=24, save_path=None, lambda_phi=None):
-    x = np.linspace(0, 1, 100)
-    phi = lambda_phi(x)
+def plot_2d_antibody(model, time_list, C_scale=60, r_scale=200, t_scale=24, save_path=False, lambda_phi=lambda x: 0.44 * x ** 3.2 + 0.56, title: str=None):
+    r = np.linspace(0, 1, 100)
+    phi = lambda_phi(r)
     plt.figure(figsize=(8, 6))
-    for t in time_list:
-        t_array = np.full_like(x, t)
-        xt = np.stack((x, t_array), axis=1)
-        u = model.predict(xt)
-        y = u[:, 0:1] * phi.reshape(-1, 1) * C_scale
-        plt.scatter(xt[:, 0:1] * r_scale, y, s=10, alpha=0.5, label=f't={t*t_scale}h')
-    # plt.plot(x * r_scale, phi * r_scale, 'k--', label='Porosity Profile')
-    plt.xlabel('Radius')
-    plt.ylabel('Concentration % of Csol')
-    plt.title('ANTIBODY PROFILES\ncenter/surface hard constrained')
+    for time in time_list:
+        t = np.full_like(r, time)
+        x = np.stack((r, t), axis=1)
+        pred = model.predict(x)
+        y0 = pred[:, 0:1] * C_scale
+        plt.scatter(x[:, 0:1] * r_scale, y0, s=10, alpha=0.5, label=f't={time * t_scale}h')
+    # plt.plot(r * r_scale, phi * r_scale, 'k--', label='Porosity Profile')
+    plt.xlabel('r')
+    plt.ylabel('[Ab_I] / [Ab_sol]')
+    plt.title(f'{title}')
     plt.legend()
     plt.grid(alpha=0.5)
-    plt.savefig(f'{save_path}/non_binding_non_reacting_antibody_profiles.png', dpi=300) if save_path is not None else None
+    plt.savefig(f'{save_path}/{title}.png', dpi=300) if save_path is not None else None
     plt.show()
