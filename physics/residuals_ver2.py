@@ -10,9 +10,13 @@ def get_pde_residuals(model: PINN, dataset: Dataset, ctx: PhysicsContext, phase)
     t = dataset.data[:, 1:2].requires_grad_(True)
 
     # Get physics from context
+    # phi = ctx.get_phi(r) 
+    # p = ctx.get_pde_parameters()
+    # pi = ctx.get_dimentionaless_params(phase=phase)
     phi = ctx.get_phi(r) 
-    p = ctx.get_pde_parameters()
     pi = ctx.get_dimentionaless_params(phase=phase)
+    Rt = 1060
+    C_star = 1
 
     # take the prediction
     cf, cb, ci = model(r, t)
@@ -29,16 +33,27 @@ def get_pde_residuals(model: PINN, dataset: Dataset, ctx: PhysicsContext, phase)
     flux_r = torch.autograd.grad(flux, r, torch.ones_like(flux), create_graph=True)[0]
 
     # Calculate pde terms
-    diffusion = pi['diff'] * flux_r
-    association1 = pi['on1'] * cf/phi * (1 - cb) 
-    association2 = pi['on2'] * cf/phi * (1 - cb)
-    dissociation1 = pi['off1'] * cb
-    dissociation2 = pi['off2'] * cb
-    internalization = pi['int'] * cb
+    # diffusion = pi['diff'] * flux_r
+    # association1 = pi['on1'] * cf/phi * (1 - cb) 
+    # association2 = pi['on2'] * cf/phi * (1 - cb)
+    # dissociation1 = pi['off1'] * cb
+    # dissociation2 = pi['off2'] * cb
+    # internalization = pi['int'] * cb
+
+    # return {
+    #     'f': phi * cf_pore_t * (r**2) - diffusion + association1 * (r**2) - dissociation1 * (r**2),
+    #     'b': cb_t - association2 + dissociation2 + internalization,
+    #     'i':  ci_t - internalization
+    # }
+
+    diffusion = pi['D'] * flux_r
+    reaction = pi['K_on'] * cf/phi * (Rt/C_star - cb) - pi['K_off'] * cb
+    internalization = pi['K_int'] * ci
+    
 
     return {
-        'f': phi * cf_pore_t * (r**2) - diffusion + association1 * (r**2) - dissociation1 * (r**2),
-        'b': cb_t - association2 + dissociation2 + internalization,
+        'f': phi * cf_pore_t * (r**2) - diffusion + reaction * (r**2),
+        'b': cb_t - reaction + internalization,
         'i':  ci_t - internalization
     }
 
@@ -58,17 +73,20 @@ def get_surface_residual(model: PINN, dataset: Dataset, ctx: PhysicsContext, pha
     
     pi = ctx.get_dimentionaless_params(phase=phase)
     phi = ctx.get_phi(r)
+    C_sol = ctx.C_sol[phase]
+    C_star = 1
+    robin_coef = pi['P']/pi['D']
 
     cf, _, _ = model(r, t)
     cf_pore = cf / phi
     cf_pore_r = torch.autograd.grad(cf_pore, r, torch.ones_like(cf_pore), create_graph=True)[0]
 
     if phase == "uptake":
-        return phi * cf_pore_r - pi['surface'] * (1 - cf/phi) # Robin.
+        return phi * cf_pore_r - robin_coef * (C_sol/C_star - cf/phi) # Robin.
     elif phase == 'fishing':
         return cf - 0 # Dirichlet.
     elif phase == "clearance":
-        return phi * cf_pore_r - pi['surface'] * (0 - cf/phi) # Robin.
+        return phi * cf_pore_r - robin_coef * (C_sol/C_star - cf/phi) # Robin.
 
 def get_initial_residual(model: PINN, dataset: Dataset, phase="uptake", ic_target_values=None, is_first_window=True):
     r = dataset.data[:,0:1].requires_grad_(True)

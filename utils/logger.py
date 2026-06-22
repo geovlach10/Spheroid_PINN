@@ -1,6 +1,4 @@
-from matplotlib import table
-
-from core.data import PINNDataset
+from core.data import Dataset
 from core.model import PINN
 from core.context import PhysicsContext
 import os
@@ -48,7 +46,7 @@ class PINNLoger():
         return pd.DataFrame(self.history)
     
 
-def log_to_excel(epoch, approximator: PINN, pde_dataset: PINNDataset, center_dataset: PINNDataset, surface_dataset: PINNDataset, ic_dataset: PINNDataset, pde_loss_fn, bc_loss_fn, ic_loss_fn, ctx: PhysicsContext, first_run=False):
+def log_to_excel(epoch, approximator: PINN, pde_dataset: Dataset, center_dataset: Dataset, surface_dataset: Dataset, ic_dataset: Dataset, pde_loss_fn, bc_loss_fn, ic_loss_fn, ctx: PhysicsContext, first_run=False):
     excel_path = 'results/pinn_physics_report.xlsx'
     if  os.path.exists(excel_path):
         if not zipfile.is_zipfile(excel_path):
@@ -81,3 +79,18 @@ def log_to_excel(epoch, approximator: PINN, pde_dataset: PINNDataset, center_dat
         df_ic.to_excel(excel_writer=writer, sheet_name=f'IC_Epoch_{epoch}', index=False)
 
     print(f'📊 Excel updated: Epoch {epoch} (PDE + BC + IC)')
+
+
+## Simple logger.
+# Log to screen.
+        # if epoch == 0:
+        #     header = f"{'Epoch':^10} | {'Total':^10} | {'pde_f':^10} | {'pde_b':^10} | {'pde_i':^10} | {'bc0':^10} | {'bcR':^10} | {'ic_f':^10} | {'ic_b':^10} | {'ic_i':^10} "
+        #     print('-' * len(header))
+        #     print(header)
+        #     print('-' * len(header))
+        # if epoch % 200 == 0:
+        #     line = f"{epoch:^10} | {losses['total'].item():^10.4e} | {losses['pde_f'].item():^10.4e} | {losses['pde_b'].item():^10.4e} | {losses['pde_i'].item():^10.4e} | {losses['center'].item():^10.4e} | {losses['surface'].item():^10.4e} | {losses['ic_f'].item():^10.4e} | {losses['ic_b'].item():^10.4e} | {losses['ic_i'].item():^10.4e}"
+        #     print(line)
+        # # if epoch % 1000 == 0:
+        # #     log_to_excel(epoch=epoch, approximator=self.approximator, pde_dataset=self.pde_training_dataset, center_dataset=self.center_training_dataset, surface_dataset=self.surface_training_dataset, ic_dataset=self.initial_training_dataset, pde_loss_fn=self.pde_loss_fn, bc_loss_fn=self.bc_loss_fn,ic_loss_fn=self.ic_loss_fn, ctx=self.ctx)
+        # pbar.set_postfix({key: f'{value.item():.4e}' for key, value in losses.items()})

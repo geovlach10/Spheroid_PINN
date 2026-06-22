@@ -27,14 +27,19 @@ class PINN(nn.Module):
         self.layers.append(nn.Linear(n_neurons, self.output_dim))
 
         # Weight initializer
-        self._initialize_weights()
+        # self._initialize_weights()
 
     def forward(self, x, t):
+        '''x, t: column vectors of shape (n_points * 1)
+        return: torch.Tensor of shape (n_points * 3)'''
         u = torch.cat((x, t), dim=1)
         for i in range(len(self.layers) - 1):
-             u = self.activation(self.layers[i](u))
+            u = self.activation(self.layers[i](u))
         u = F.softplus(self.layers[-1](u)) # ensure positivity of the output
+        # u = (1.0 - torch.exp(-t * 0.5)) * u
+        # u = self.layers[-1](u)
         return u[:, 0].view(-1, 1), u[:, 1].view(-1, 1), u[:, 2].view(-1, 1)
+        # return u
     
     def show_if_requires_grad(self):
         print('\ninspect which parameters being recorded in the graph')

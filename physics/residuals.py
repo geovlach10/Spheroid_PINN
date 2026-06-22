@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 from core.context import PhysicsContext
 from core.model import PINN
-from core.data import PINNDataset
+from core.data import Dataset
 import pandas as pd
 
-def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, pointwise=False, return_df=False):
+def pde_loss_fn(approximator: PINN, data: Dataset, ctx: PhysicsContext, pointwise=False, return_df=False):
     '''
     args:
       approximator: PINN instance
@@ -17,7 +17,7 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
       if pointwise: Tuple of 3 column tensors of size: (num_batches * 1)
       if not pointwise: Tuple of 3 scalars representing the mean squared residuals of the 3 equations
     '''
-    if isinstance(data, PINNDataset):
+    if isinstance(data, Dataset):
         r_hat = data.r.requires_grad_(True)
         t_hat = data.r.requires_grad_(True)
     else:
@@ -110,7 +110,7 @@ def pde_loss_fn(approximator: PINN, data: PINNDataset, ctx: PhysicsContext, poin
         return residual_eq1, residual_eq2, residual_eq3  # Vectors
     return loss_eq1, loss_eq2, loss_eq3 # Scalar
 
-def bc_loss_fn(approximator: PINN, ctx: PhysicsContext, data_center: PINNDataset, data_surface: PINNDataset, uptake=True, return_df=False):
+def bc_loss_fn(approximator: PINN, ctx: PhysicsContext, data_center: Dataset, data_surface: Dataset, uptake=True, return_df=False):
     weight_center = ctx.pde_weights['weight_center']
     weight_surface = ctx.pde_weights['weight_surface']
     ####################################################################################################################################
@@ -165,7 +165,7 @@ def bc_loss_fn(approximator: PINN, ctx: PhysicsContext, data_center: PINNDataset
             )
     return loss_center, loss_surface 
 
-def ic_loss_fn(approximator, data: PINNDataset, ctx: PhysicsContext, return_df=False):
+def ic_loss_fn(approximator, data: Dataset, ctx: PhysicsContext, return_df=False):
     weight = ctx.pde_weights['weight_ic']
 
     data = data.get_nondimentional_data()

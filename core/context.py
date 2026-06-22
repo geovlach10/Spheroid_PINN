@@ -25,9 +25,9 @@ cfg = {
     'p_fi': 0,
     'p_cl': 8.0e-3,         # (μm/sec) mass transfer coefficient for the clearance experiment
     # pde weights
-    'eq1': 0.0,
-    'eq2': 0.0,
-    'eq3': 0.0,
+    'eq1': 1.0,
+    'eq2': 1.0,
+    'eq3': 1.0,
     'center': 1.0,
     'surface': 1.0,
     'ic_f': 1.0,
@@ -89,37 +89,57 @@ class PhysicsContext(nn.Module):
         }
         
 
-    def get_dimentionaless_params(self, phase):
-        ''' 
-        phase: Can be 'uptake', 'fishing', 'clearance'.
-        Calculates dimentionless parameters for the normalized domain in each phase of the experiment.
-        '''
-        p = self.get_pde_parameters()
-        tau = self.tau
-        # k_on = p['k_off'] / p['k_d'] # 1 / (sec * nM)
-        # P = {'uptake': p['p_up'], 'fishing': p['p_fi'], 'clearance': p['p_cl']}
-        k_on = cfg['k_off'] / cfg['k_d'] # 1 / (sec * nM)
-        P = {'uptake': cfg['p_up'], 'fishing': cfg['p_fi'], 'clearance': cfg['p_cl']}
+    # def get_dimentionaless_params(self, phase):
+    #     ''' 
+    #     phase: Can be 'uptake', 'fishing', 'clearance'.
+    #     Calculates dimentionless parameters for the normalized domain in each phase of the experiment.
+    #     '''
+    #     p = self.get_pde_parameters()
+    #     tau = self.tau
+    #     # k_on = p['k_off'] / p['k_d'] # 1 / (sec * nM)
+    #     # P = {'uptake': p['p_up'], 'fishing': p['p_fi'], 'clearance': p['p_cl']}
+    #     k_on = cfg['k_off'] / cfg['k_d'] # 1 / (sec * nM)
+    #     P = {'uptake': cfg['p_up'], 'fishing': cfg['p_fi'], 'clearance': cfg['p_cl']}
         
-        # non_dimentional_params = {
-        #     'diff': p['d'] * (1.0 / self.R**2) * 3600 * tau[phase],
-        #     'on1': k_on * 3600 * tau[phase] * p['r_t'],
-        #     'off1': p['k_off'] * 3600 * tau[phase] * p['r_t']/self.C_sol[phase] ,
-        #     'on2': k_on * 3600 * tau[phase] * self.C_sol[phase],
-        #     'off2': p['k_off'] * 3600 * tau[phase],
-        #     'int': p['k_int'] * 3600 * tau[phase],
-        #     'surface': (P[phase] * self.R) / p['d']  
-        # }
-        non_dimentional_params = {
-            'diff': cfg['d'] * (1.0 / self.R**2) * 3600 * tau[phase],
-            'on1': k_on * 3600 * tau[phase] * cfg['r_t'],
-            'off1': cfg['k_off'] * 3600 * tau[phase] * cfg['r_t']/self.C_sol[phase] ,
-            'on2': k_on * 3600 * tau[phase] * self.C_sol[phase],
-            'off2': cfg['k_off'] * 3600 * tau[phase],
-            'int': cfg['k_int'] * 3600 * tau[phase],
-            'surface': (P[phase] * self.R) / cfg['d']  
+    #     # non_dimentional_params = {
+    #     #     'diff': p['d'] * (1.0 / self.R**2) * 3600 * tau[phase],
+    #     #     'on1': k_on * 3600 * tau[phase] * p['r_t'],
+    #     #     'off1': p['k_off'] * 3600 * tau[phase] * p['r_t']/self.C_sol[phase] ,
+    #     #     'on2': k_on * 3600 * tau[phase] * self.C_sol[phase],
+    #     #     'off2': p['k_off'] * 3600 * tau[phase],
+    #     #     'int': p['k_int'] * 3600 * tau[phase],
+    #     #     'surface': (P[phase] * self.R) / p['d']  
+    #     # }
+    #     non_dimentional_params = {
+    #         'diff': cfg['d'] * (1.0 / self.R**2) * 3600 * tau[phase],
+    #         'on1': k_on * 3600 * tau[phase] * cfg['r_t'],
+    #         'off1': cfg['k_off'] * 3600 * tau[phase] * cfg['r_t']/self.C_sol[phase] ,
+    #         'on2': k_on * 3600 * tau[phase] * self.C_sol[phase],
+    #         'off2': cfg['k_off'] * 3600 * tau[phase],
+    #         'int': cfg['k_int'] * 3600 * tau[phase],
+    #         'surface': (P[phase] * self.R) / cfg['d']  
+    #     }
+    #     return non_dimentional_params
+    
+    def get_dimentionaless_params(self, phase):
+        C = 1.0         #nM
+        R = 200         #μm
+        T = {'uptake': 24 * 3600, 'fishing': 0.5 / 60 * 3600, 'clearance': 24 * 3600}     # sec 
+
+        C_sol = {'uptake': 60, 'fishing': 0, 'clearance': 0}           # nM
+        P = {'uptake': 2.5e-4, 'fishing': 0, 'clearance': 2.6e-7}      # μm / sec
+        D_eff = 8.38        # μm^2 / sec
+        K_d = 6.76          # nM
+        K_off = 4e-3        # 1 / sec
+        K_int = 1.4e-5      # 1/ sec
+        K_on = K_off / K_d  # 1 / sec / nM
+        return {
+            'D': T[phase] / R**2 * D_eff, 
+            'K_on': T[phase] * C * K_on,
+            'K_off': T[phase] * K_off,
+            'K_int': T[phase] * K_int,
+            'P': T[phase] / R * P[phase]
         }
-        return non_dimentional_params
     
     def get_phi(self, r: torch.Tensor):
         return 0.44 * r**3.2 + 0.56

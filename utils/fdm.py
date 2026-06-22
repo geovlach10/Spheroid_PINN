@@ -193,7 +193,7 @@ def run_fdm(m, ctx: PhysicsContext, phase_name, y0, binding, t_final=1.0):
 
         diffusion = L_cf @ cf + b
         reaction = pi['K_on'] * cf/phi * (Rt/C_star - cb) - pi['K_off'] * cb
-        internalization = pi['K_int'] * ci
+        internalization = pi['K_int'] * cb
         
         cf_t = diffusion - reaction
         cb_t = reaction - internalization
