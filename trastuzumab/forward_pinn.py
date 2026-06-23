@@ -4,19 +4,27 @@ from .neural_nets import FCNN
 from . import residuals
 
 class Pinn():
-    def __init__(self, col, initial, center, surface, l_bounds=[0, 0], u_bounds=[1, 1/24], device='mps', seed=42, dtype=torch.float32, layers=4, neurons=16):
+    def __init__(self, n_col, n_initial, n_center, n_surface, l_bounds=[0, 0], u_bounds=[1, 1/24], device='mps', seed=42, dtype=torch.float32, layers=4, neurons=16):
         self.seed=seed
         self.device = device if device else('cuda' if torch.cuda.is_available() else 'cpu')
         self.dtype = dtype
+
+        self.lower_bounds = l_bounds
+        self.upper_bounds = u_bounds
+
+        self.n_col = n_col
+        self.n_initial = n_initial
+        self.n_center = n_center
+        self.n_surface = n_surface
 
         self.net = FCNN(n_layers=layers, n_neurons=neurons, seed=self.seed).to(self.device)
 
         # Dataset atttributes
         self.sampler = DatasetSampler(seed=self.seed)
-        self.collocation_training_dataset = self.sampler.sample_collocation_points(n_points=col, l_bounds=l_bounds, u_bounds=u_bounds)
-        self.initial_training_dataset = self.sampler.sample_initial_points(n_points=initial, l_bounds=l_bounds, u_bounds=u_bounds)
-        self.center_training_dataset = self.sampler.sample_center_points(n_points=center, l_bounds=l_bounds, u_bounds=u_bounds)
-        self.surface_training_dataset = self.sampler.sample_surface_points(n_points=surface, l_bounds=l_bounds, u_bounds=u_bounds)
+        self.collocation_training_dataset = self.sampler.sample_collocation_points(n_points=self.n_col, l_bounds=l_bounds, u_bounds=u_bounds)
+        self.initial_training_dataset = self.sampler.sample_initial_points(n_points=self.n_initial, l_bounds=l_bounds, u_bounds=u_bounds)
+        self.center_training_dataset = self.sampler.sample_center_points(n_points=self.n_center, l_bounds=l_bounds, u_bounds=u_bounds)
+        self.surface_training_dataset = self.sampler.sample_surface_points(n_points=self.n_surface, l_bounds=l_bounds, u_bounds=u_bounds)
         self.sensor_training_dataset = None
         self.new_pde_training_dataset = None
         
