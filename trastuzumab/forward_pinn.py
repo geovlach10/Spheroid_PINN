@@ -1,8 +1,7 @@
 import torch
-from datasets import DatasetSampler
-from networks import FCNN
-import residuals 
-
+from .datasets import DatasetSampler
+from .neural_nets import FCNN
+from . import residuals
 
 class Pinn():
     def __init__(self, col, initial, center, surface, l_bounds=[0, 0], u_bounds=[1, 1/24], device='mps', seed=42, dtype=torch.float32, layers=4, neurons=16):

@@ -1,7 +1,7 @@
 import torch 
-from networks import FCNN
-from datasets import Dataset
-import constants as _CON
+from .neural_nets import FCNN
+from .datasets import Dataset
+from . import constants as _CON
 
 ## porosity profiles.
 def phi(r: torch.Tensor):

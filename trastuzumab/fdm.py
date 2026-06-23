@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
-import constants as _CST
+from . import constants as _CST
 
 def get_mat(diag_size, sub, main, sup):
     '''
