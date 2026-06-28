@@ -6,7 +6,8 @@ class FCNN(nn.Module):
     def __init__(self, n_layers, n_neurons, initialization: bool=True, seed=42):
         super().__init__()
         # Reproducibility
-        torch.manual_seed(seed)
+        self.seed = seed
+        torch.manual_seed(self.seed)
 
         # Network attributes
         self.input_dim = 2
@@ -48,3 +49,4 @@ class FCNN(nn.Module):
         for name, param in self.named_parameters():
             if 'layer' not in name:
                  print(f'{name}, optimizability: {param.requires_grad}')
+

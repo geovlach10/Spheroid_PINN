@@ -15,7 +15,7 @@ def dphi_dr(r: torch.Tensor):
     return 0.44 * 3.2 * r ** 2.2
 
 ## residual operators.
-def pde(net: FCNN, dataset: Dataset):
+def pde(net: FCNN, dataset: Dataset, L=1.0):
     ''' Everything is normilized r=r_hat, t=t_hat, C=C_hat...'''
     # Slice the dataset and conenct the vectors to the graph
     r = dataset.data[:,0:1].requires_grad_(True)
@@ -35,7 +35,7 @@ def pde(net: FCNN, dataset: Dataset):
     K_r = torch.autograd.grad(K, r, torch.ones_like(K), create_graph=True)[0]
 
     diffusion = _CON.D_STAR * K_r
-    reaction = _CON.K_ON_STAR * u0 * (_CON.R_T_STAR - c1) - _CON.K_OFF_STAR * c1
+    reaction = _CON.K_ON_STAR * u0 * (L * _CON.R_T_STAR - c1) - _CON.K_OFF_STAR * c1
     internalization = _CON.K_INT_STAR * c1
     
     res0 = phi(r) * u0_t * (r**2) - diffusion + reaction * (r**2)
