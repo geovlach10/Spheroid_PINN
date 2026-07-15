@@ -1,5 +1,9 @@
+from __future__ import annotations
+from typing import Callable
+
 import torch 
 from .neural_nets import FCNN
+from .constrained_net import ConstrainedNet
 from .datasets import Dataset
 from . import constants as _CON
 
@@ -15,7 +19,7 @@ def dphi_dr(r: torch.Tensor):
     return 0.44 * 3.2 * r ** 2.2
 
 ## residual operators.
-def pde(net: FCNN, dataset: Dataset, L=1.0):
+def pde(net: FCNN | ConstrainedNet, dataset: Dataset, L=1.0, scaled: bool = False) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     ''' Everything is normilized r=r_hat, t=t_hat, C=C_hat...'''
     # Slice the dataset and conenct the vectors to the graph
     r = dataset.data[:,0:1].requires_grad_(True)
@@ -41,9 +45,10 @@ def pde(net: FCNN, dataset: Dataset, L=1.0):
     res0 = phi(r) * u0_t * (r**2) - diffusion + reaction * (r**2)
     res1 = c1_t - reaction + internalization
     res2 = c2_t - internalization
-    return res0, res1, res2
+    
+    return (res0 / _CON.SCALE0, res1 / _CON.SCALE1(L), res2 / _CON.SCALE2 ) if scaled else (res0, res1, res2)
 
-def center_neumann(net: FCNN, dataset: Dataset, target=0.0):
+def center_neumann(net: FCNN | ConstrainedNet, dataset: Dataset, target=0.0) -> torch.Tensor:
     r = dataset.data[:,0:1].requires_grad_(True)
     t = dataset.data[:,1:2].requires_grad_(True)
     
@@ -52,7 +57,7 @@ def center_neumann(net: FCNN, dataset: Dataset, target=0.0):
     return c0_r - target
   
 
-def surface_robin(net: FCNN, dataset: Dataset):
+def surface_robin(net: FCNN | ConstrainedNet, dataset: Dataset) -> torch.Tensor:
     r = dataset.data[:,0:1].requires_grad_(True)
     t = dataset.data[:,1:2].requires_grad_(True)
 
@@ -60,14 +65,14 @@ def surface_robin(net: FCNN, dataset: Dataset):
     u0 = c0 / phi(r)
     u0_r = torch.autograd.grad(u0, r, torch.ones_like(u0), create_graph=True)[0]
 
-    return phi(r) * u0_r - _CON.P_STAR * (_CON.C_SOL_STAR - u0)
+    return  phi(r) * u0_r - (_CON.P_STAR / _CON.D_STAR) * (_CON.C_SOL_STAR - u0)
 
-def initial(net: FCNN, dataset: Dataset, target_values=(0, 0, 0)):
+
+def initial(net: FCNN | ConstrainedNet, dataset: Dataset, ic_func: Callable[[torch.Tensor], torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     r = dataset.data[:,0:1].requires_grad_(True)
     t = dataset.data[:,1:2].requires_grad_(True)
     
     c0, c1, c2 = net(r, t)
-    ic0, ic1, ic2 = target_values
-    res0, res1, res2 = c0 - ic0, c1 - ic1, c2 - ic2
+    ic0 = ic1 = ic2 = ic_func(r)
 
-    return res0, res1, res2
+    return c0 - ic0, c1 - ic1, c2 - ic2

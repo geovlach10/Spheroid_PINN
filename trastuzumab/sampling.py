@@ -35,7 +35,7 @@ def _select(scores: torch.Tensor, canditates: Dataset, m_add: int) -> Dataset:
     return Dataset(data=selected, name='rar-g', n_points=selected.shape[0])
 
 def rar_g(
-    pinn: pinns.Pinn, 
+    pinn: pinns.BasePinn, 
     optimizer: torch.optim.Adam,
     *,
     n_rounds: int = 10,
