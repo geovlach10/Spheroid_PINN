@@ -1,7 +1,24 @@
 '''contains utility objects that help evaluate the performance of the PINN.'''
-from .pinns import Pinn
+from .pinns import BasePinn
 import numpy as np
 import torch
+from . import constants as _CST
+
+def get_spatial_antibody_distribution(t_exp, pinn: BasePinn, L):
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(12, 9))
+    r = torch.linspace(0, 1, 100).reshape(-1, 1)
+    for time in [0, 0.25 * t_exp, 0.5 * t_exp, 0.75 * t_exp, t_exp]:
+        t = torch.full_like(r, time)
+        with torch.no_grad():
+            c0, _, _ = pinn.net(r, t)
+        plt.plot(r, c0, label=f't={time * 24}h')
+    plt.title(f'spatial distribution of TRM || time: [0 - {t_exp * 24}h] - R_T: {L * _CST.R_T}')
+    plt.xlabel(f'r')
+    plt.ylabel(f'[Ab_I]/[C_reference]')
+    plt.legend()
+    plt.show()
 
 class Evaluator:
     '''evaluates the performance of pinn vs fdm'''
@@ -24,7 +41,7 @@ class Evaluator:
             'c2': Y[2*self.N:, :]
         }
 
-    def _pinn_field(self, model: Pinn):
+    def _pinn_field(self, model: BasePinn):
         pred = {'c0': [], 'c1': [], 'c2': []}
         net = model.net
         for time in self.t_grid:
@@ -42,7 +59,7 @@ class Evaluator:
         denom = np.linalg.norm(true)
         return float(np.linalg.norm(pred - true) / denom) if denom > 0 else float('nan')
 
-    def score(self, model: Pinn):
+    def score(self, model: BasePinn):
         pred = self._pinn_field(model)
         for k in self.SPECIES:
             assert pred[k].shape == self.fdm[k].shape, f'{k}: {pred[k].shape} vs {self.fdm[k].shape}'
@@ -68,3 +85,5 @@ class Evaluator:
     def compare(self, models: dict):
         """models: {label: Pinn}. Returns {label: score_dict}. The bake-off."""
         return {label: self.score(m) for label, m in models.items()}
+    
+

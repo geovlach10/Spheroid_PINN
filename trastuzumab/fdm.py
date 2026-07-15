@@ -212,17 +212,17 @@ Scope: uptake (primary) + clearance (dormant). Fishing is out of scope.
 R = 200.0           # spheroid radius (um)
 C_MAX = 60.0        # characteristic concentration (nM)
 
-D_EFF = 8.38 * 3600       # antibody diffusion coeff in interstitium (um^2/sec)
-K_OFF = 4e-3 * 3600       # dissociation rate constant (1/sec)
-K_D = 6.76                # equilibrium dissociation constant, K_D = k_off/k_on (nM)
-K_INT = 1.4e-5 * 3600     # internalization rate constant (1/sec)
-R_T = 1060.0              # total receptor concentration (nM)
-K_ON = K_OFF / K_D        # association rate constant (1/(sec*nM))
+D_EFF = 8.38        # antibody diffusion coeff in interstitium (um^2/sec)
+K_OFF = 4e-3        # dissociation rate constant (1/sec)
+K_D = 6.76          # equilibrium dissociation constant, K_D = k_off/k_on (nM)
+K_INT = 1.4e-5      # internalization rate constant (1/sec)
+R_T = 1060.0        # total receptor concentration (nM)
+K_ON = K_OFF / K_D  # association rate constant (1/(sec*nM))
 
 # --- per-phase scales -------------------------------------------------------
 TAU = {             # characteristic time of each phase (sec)
-    'uptake': 24 ,
-    'clearance': 24,
+    'uptake': 24  * 3600,
+    'clearance': 24 * 3600,
 }
 C_SOL = {           # bath antibody concentration (nM)
     'uptake': 60.0,

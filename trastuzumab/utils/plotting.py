@@ -1,6 +1,25 @@
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 from ..evaluation import Evaluator
+from ..neural_nets import FCNN
+from ..constants import *
+
+def get_spatial_antibody_distribution(t_exp, model_name: str, net: FCNN, L):
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(12, 9))
+    r = torch.linspace(0, 1, 100).reshape(-1, 1)
+    for time in [0, 0.25 * t_exp, 0.5 * t_exp, 0.75 * t_exp, t_exp]:
+        t = torch.full_like(r, time)
+        with torch.no_grad():
+            c0, _, _ = net(r, t)
+        plt.plot(r, c0, label=f't={time * 24}h')
+    plt.title(f'{model_name}\nspatial distribution of TRM || time: [0 - {t_exp * 24}h] - R_T: {L * R_T}')
+    plt.xlabel(f'r')
+    plt.ylabel(f'[Ab_I]/[C_reference]')
+    plt.legend()
+    plt.show()
 
 def plot_comparison(results: dict, evaluator: Evaluator, models: dict, species='c0'):
     """results: from Evaluator.compare. Rows = models, cols = [overlay, error heatmap]."""

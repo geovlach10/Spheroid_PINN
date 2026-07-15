@@ -1,10 +1,16 @@
+from __future__ import annotations
+from typing import Callable, Optional
+
 import torch
 import torch.nn as nn
 
+
 class FCNN(nn.Module):
-    ''' returns: Tuple of 3 column tensors of size: (num_batches * 1)'''
-    def __init__(self, n_layers, n_neurons, initialization: bool=True, seed=42):
+    _INITS = {'xavier_normal': nn.init.xavier_normal_, 'xavier_uniform': nn.init.xavier_uniform_}
+    def __init__(self, n_layers, n_neurons, initialization: str | None=None, input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, seed: int = 42):
+        """initaialization: 'xavier_normal' or 'xavier_uniform'"""
         super().__init__()
+
         # Reproducibility
         self.seed = seed
         torch.manual_seed(self.seed)
@@ -21,32 +27,45 @@ class FCNN(nn.Module):
         # Layers
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(self.input_dim, n_neurons))
-        for i in range(n_layers - 2):
+        for _ in range(n_layers - 2):
             self.layers.append(nn.Linear(n_neurons, n_neurons))
         self.layers.append(nn.Linear(n_neurons, self.output_dim))
 
         # Weight initializer
-        if initialization:
-            self._initialize_weights()
+        self.initialization = initialization
+        self._initialize_weights(self.initialization)
+        
+        self.input_transformation = input_transformation
+        self.output_transformation = output_transformation
 
-    def forward(self, x, t):
-        '''x, t: column vectors of shape (n_points * 1)
-        return: torch.Tensor of shape (n_points * 3)'''
-        u = torch.cat((x, t), dim=1)
-        for i in range(len(self.layers) - 1):
-            u = self.activation(self.layers[i](u))
-        u = self.layers[-1](u)
-        u = t * u 
-        return u[:, 0].view(-1, 1), u[:, 1].view(-1, 1), u[:, 2].view(-1, 1)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 1. input transformation.
+        if self.input_transformation is not None:
+            x = self.input_transformation(x)
 
-    def _initialize_weights(self):
-        for layer in self.children():
-            if isinstance(layer, nn.Linear):
-                nn.init.xavier_uniform_(layer.weight)
-        print('neural network weights initialized succesfully')
+        # 2. Feedforward through all hidden layers except the output layer
+        for layer in self.layers[:-1]:
+            x = self.activation(layer(x))
 
-    def param_optimization_bool(self):
-        for name, param in self.named_parameters():
-            if 'layer' not in name:
-                 print(f'{name}, optimizability: {param.requires_grad}')
+        # 3.Output layer (No activation).
+        u = self.layers[-1](x)
+
+        # 4. Output transformation.
+        if self.output_transformation is not None:
+            u = self.output_transformation(u)
+        
+        return u
+    
+    def _initialize_weights(self, initialization: str | None):
+        if initialization is not None:
+            for layer in self.layers:
+                if isinstance(layer, nn.Linear):
+                    self._INITS[initialization](layer.weight)
+                    if layer.bias is not None:
+                        nn.init.zeros_(layer.bias)
+            print(f'neural network weights initialized succesfully - initializer: {initialization}')
+        else:
+            print('weight have not been initialized.')
+        
+
 
