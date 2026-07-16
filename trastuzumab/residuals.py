@@ -22,10 +22,11 @@ def dphi_dr(r: torch.Tensor):
 def pde(net: FCNN | ConstrainedNet, dataset: Dataset, L=1.0, scaled: bool = False) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     ''' Everything is normilized r=r_hat, t=t_hat, C=C_hat...'''
     # Slice the dataset and conenct the vectors to the graph
-    r = dataset.data[:,0:1].requires_grad_(True)
-    t = dataset.data[:, 1:2].requires_grad_(True)
+    r = dataset.data.clone()[:,0:1].requires_grad_(True)
+    t = dataset.data.clone()[:, 1:2].requires_grad_(True)
 
-    c0, c1, c2 = net(r, t)
+    pred = net(r, t)
+    c0 = pred[:, 0:1];  c1 = pred[:, 1:2];  c2 = pred[:, 2:3]
     u0 = c0 / phi(r)
 
     # calculate time derivatives
@@ -49,19 +50,19 @@ def pde(net: FCNN | ConstrainedNet, dataset: Dataset, L=1.0, scaled: bool = Fals
     return (res0 / _CON.SCALE0, res1 / _CON.SCALE1(L), res2 / _CON.SCALE2 ) if scaled else (res0, res1, res2)
 
 def center_neumann(net: FCNN | ConstrainedNet, dataset: Dataset, target=0.0) -> torch.Tensor:
-    r = dataset.data[:,0:1].requires_grad_(True)
-    t = dataset.data[:,1:2].requires_grad_(True)
+    r = dataset.data.clone()[:,0:1].requires_grad_(True)
+    t = dataset.data.clone()[:,1:2].requires_grad_(True)
     
-    c0, _, _ = net(r, t)
+    c0 = net(r, t)[:, 0:1]
     c0_r = torch.autograd.grad(c0, r, torch.ones_like(c0), create_graph=True)[0]
     return c0_r - target
   
 
 def surface_robin(net: FCNN | ConstrainedNet, dataset: Dataset) -> torch.Tensor:
-    r = dataset.data[:,0:1].requires_grad_(True)
-    t = dataset.data[:,1:2].requires_grad_(True)
+    r = dataset.data.clone()[:,0:1].requires_grad_(True)
+    t = dataset.data.clone()[:,1:2].requires_grad_(True)
 
-    c0, _, _ = net(r, t)
+    c0 = net(r, t)[:, 0:1]
     u0 = c0 / phi(r)
     u0_r = torch.autograd.grad(u0, r, torch.ones_like(u0), create_graph=True)[0]
 
@@ -69,10 +70,11 @@ def surface_robin(net: FCNN | ConstrainedNet, dataset: Dataset) -> torch.Tensor:
 
 
 def initial(net: FCNN | ConstrainedNet, dataset: Dataset, ic_func: Callable[[torch.Tensor], torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    r = dataset.data[:,0:1].requires_grad_(True)
-    t = dataset.data[:,1:2].requires_grad_(True)
+    r = dataset.data.clone()[:,0:1].requires_grad_(True)
+    t = dataset.data.clone()[:,1:2].requires_grad_(True)
     
-    c0, c1, c2 = net(r, t)
+    pred = net(r, t)
+    c0 = pred[:, 0:1];  c1 = pred[:, 1:2];  c2 = pred[:, 2:3]
     ic0 = ic1 = ic2 = ic_func(r)
 
     return c0 - ic0, c1 - ic1, c2 - ic2
