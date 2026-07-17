@@ -39,7 +39,7 @@ class BasePinn(ABC):
         self.initial_fn = initial_fn
         self.hard_conditions = hard_conditions
         
-        self.net = net if net is not None else FCNN(n_layers=layers, n_neurons=neurons, initialization=True, seed=self.seed)
+        self.net = net if net is not None else FCNN(n_layers=layers, n_neurons=neurons, initialization='xavier_normal', seed=self.seed)
         self.net.to(self.device)
 
         # Dataset atttributes
@@ -118,7 +118,7 @@ class BasePinn(ABC):
         checkpoint: dict[str, Any] = torch.load(path, map_location=device)
         arch = checkpoint['arch']
     
-        net = FCNN(n_layers=arch['n_layers'], n_neurons=arch['n_neurons'], initialization=False, seed=arch['seed']).to(device=device)
+        net = FCNN(n_layers=arch['n_layers'], n_neurons=arch['n_neurons'], initialization='xavier_normal', seed=arch['seed']).to(device=device)
         net.load_state_dict(checkpoint['state_dict'])
         net.eval()
 
@@ -137,7 +137,7 @@ class BasePinn(ABC):
         for time in [0, 0.25 * t_exp, 0.5 * t_exp, 0.75 * t_exp, t_exp]:
             t = torch.full_like(r, time)
             with torch.no_grad():
-                c0, _, _ = self.forward(r, t)
+                c0 = self.forward(r, t)[:, 0:1]
             plt.plot(r, c0, label=f't={time * 24}h')
         plt.title(f'spatial distribution of TRM || time: [0 - {t_exp * 24}h] - R_T: {L * _CST.R_T} || epoch: {epoch}')
         plt.xlabel(f'r')
