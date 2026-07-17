@@ -34,11 +34,13 @@ class ConstrainedNet(nn.Module):
 
     def forward(self, r: torch.Tensor, t: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         t0 = torch.zeros_like(t)
+        pred_t = self.inner_net(r, t)
+        g0_t = pred_t[:, 0:1]; g1_t = pred_t[:, 1:2]; g2_t =  pred_t[:, 2:3]            # // inner FCNN output at (r, t)
+        
+        pred_t0 = self.inner_net(r, t0)
+        g0_0 = pred_t0[:, 0:1]; g1_0 = pred_t0[:, 1:2]; g2_0 = pred_t0[:, 2:3]                                        # // inner FCNN output at (r, 0) -> IC footprint
 
-        g0_t, g1_t, g2_t = self.inner_net(r, t)                          # // inner FCNN output at (r, t)
-        g0_0, g1_0, g2_0 = self.inner_net(r, t0)                         # // inner FCNN output at (r, 0) -> IC footprint
-
-        u0 = g0_t - g0_0                                                 # // subtractive IC: u0(r, 0) = 0
+        u0 = g0_t - g0_0                                                                 # // subtractive IC: u0(r, 0) = 0
 
         if 'neumann' in self.enforce:
             _, Ng_t = self._get_inner_net_pred_and_grad(0.0, t)
@@ -76,7 +78,7 @@ class ConstrainedNet(nn.Module):
         g0 is the inner net's 1st output.'''
         with torch.enable_grad():
             r = torch.full_like(t, r_val).requires_grad_(True)
-            g0, _, _ = self.inner_net(r, t)
+            g0 = self.inner_net(r, t)[:, 0:1]
             dg0_dr = torch.autograd.grad(g0, r, torch.ones_like(g0), create_graph=True)[0]
         if not torch.is_grad_enabled():
             g0, dg0_dr = g0.detach(), dg0_dr.detach()
