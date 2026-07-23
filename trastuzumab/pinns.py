@@ -15,6 +15,7 @@ from .constrained_net import ConstrainedNet
 from . import constants as _CST
 
 
+
 class BasePinn(ABC):
 
     '''Model + physics + persistence. Owns the network and its training points,
@@ -56,13 +57,14 @@ class BasePinn(ABC):
         '''forward pass throught the net: (r, t) -> (c0, c1, c2)'''
         return self.net(r, t)
     
-    def mse_loss(self, w: dict[str, float], L :float = 1.0, scaled: bool = False) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    def mse_loss(self, w: dict[str, float], L: float = 1.0, scaled: bool = False) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         '''Compute the mean squared error loss for the PDE, IC, and BC residuals. Returns (total_loss, individual_loss_terms).'''
         pde0, pde1, pde2 = residuals.pde(net=self.net, dataset=self.collocation_training_dataset, L=L, scaled=scaled)
         ic0, ic1, ic2 = residuals.initial(net=self.net, dataset=self.initial_training_dataset, ic_func=self.initial_fn) if 'ic' not in self.hard_conditions else (torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0))
         center = residuals.center_neumann(net=self.net, dataset=self.center_training_dataset, target=0.0) if 'neumann' not in self.hard_conditions else torch.tensor(0.0)
         surface = residuals.surface_robin(net=self.net, dataset=self.surface_training_dataset) if 'robin' not in self.hard_conditions else torch.tensor(0.0)
 
+        
         individual_loss_terms = {
             'pde0': w['pde0'] * pde0.pow(2).mean(),
             'pde1': w['pde1'] * pde1.pow(2).mean(),
@@ -73,9 +75,9 @@ class BasePinn(ABC):
             'center': w['center'] * center.pow(2).mean(),
             'surface': w['surface'] * surface.pow(2).mean()
         }
-
+        
         total_loss = individual_loss_terms['pde0'] + individual_loss_terms['pde1'] + individual_loss_terms['pde2'] + individual_loss_terms['ic0'] + individual_loss_terms['ic1'] + individual_loss_terms['ic2'] + individual_loss_terms['center'] + individual_loss_terms['surface']
-    
+
         individual_loss_terms.update(self._extra_loss_term(L))      # Adds data loss term at inverse problems.
         return total_loss, individual_loss_terms
     
