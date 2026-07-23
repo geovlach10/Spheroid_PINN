@@ -41,14 +41,87 @@ class FourierFeatures(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.cat([torch.cos(x @ self.B), torch.sin(x @ self.B)], dim=-1)
-    
 
+class RWFLinear(nn.Module):
+
+    """Random Weight Factorization (RWF) linear layer, per Wang, Sankaran,
+    Wang & Perdikaris (2023), Sec. 4.3, eq. (4.4)-(4.5) / Algorithm 2:
+ 
+        W = diag(exp(s)) @ V,   s ~ N(mu, sigma^2)  (per-output-neuron scale)
+ 
+    A drop-in replacement for nn.Linear. V is initialized with a standard
+    scheme (e.g. Glorot) exactly as an nn.Linear.weight would be; s is then
+    sampled from N(mu, sigma^2) and gradient descent is applied directly to
+    the factorized parameters (s, V), never to a materialized W.
+ 
+    Why this helps (paper Theorem B.2): under this factorization, the
+    effective gradient step on the *composed* weight w = s*v gets rescaled
+    by (s^2 + ||v||_2^2) per neuron. Since s and v are themselves trainable,
+    this amounts to a self-adaptive, per-neuron learning rate -- neurons
+    that need to move further in weight-space can effectively acquire a
+    larger step size on their own, without a global LR schedule having to
+    guess that for them.
+ 
+    Forward: y = exp(s) * (x @ V^T) + b   (exp(s) broadcasts over the output dim)
+ 
+    Args:
+        in_features, out_features: same meaning as nn.Linear.
+        mu, sigma: mean/std of the initial scale-factor distribution
+            s ~ N(mu, sigma^2). Paper recommends mu in {0.5, 1.0}, sigma = 0.1;
+            too small mu/sigma converges to plain-MLP behavior, too large
+            destabilizes training (Sec. 4.3).
+        initialization: 'xavier_normal' or 'xavier_uniform', applied to V
+            at construction -- matches FCNN's existing init scheme, so RWF
+            layers and plain nn.Linear layers stay initialized consistently
+            when mixed in the same network.
+        bias: whether to include a bias term (default True, as in nn.Linear).
+    """
+     
+    _INITS = {'xavier_normal': nn.init.xavier_normal_, 'xavier_uniform': nn.init.xavier_uniform_} # acceptable initialization schemes.
+
+    def __init__(self, in_features: int, out_features: int, mu: float = 1.0, sigma: float = 0.1, initialization: str = '', bias: bool = True):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.mu = mu
+        self.sigma = sigma
+        self.initialization = initialization
+        # ---
+        self.V = nn.Parameter(self._get_initialized_V)
+        self.s = nn.Parameter(mu + sigma * torch.randn(out_features))
+        self.bias = nn.Parameter(torch.zeros([out_features])) if bias else None
+        # ---
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = torch.exp(self.s) * F.linear(x, self.V)
+        if self.bias is not None:
+            y = y + self.bias
+        return y
+    
+    @property
+    def _get_initialized_V(self) -> torch.Tensor:
+        V = torch.empty([self.out_features, self.in_features])
+        init_fn = self._INITS.get(self.initialization, nn.init.xavier_normal_)
+        init_fn(V)
+        return V
+    
+    @property
+    def weight(self) -> torch.Tensor:
+        """Materializes W = diag(exp(s)) @ V for inspection/debugging.
+        Not used in forward() -- the factorized form is what's actually
+        trained, per the derivation above."""
+        return torch.exp(self.s).unsqueeze(1) * self.V
+    
+    def __repr__(self) -> str:
+        return f'RWFLinear(in_features={self.in_features}, out_features={self.out_features}, mu={self.mu}, sigma={self.sigma})'
+    
 
 class FCNN(nn.Module):
 
     _INITS = {'xavier_normal': nn.init.xavier_normal_, 'xavier_uniform': nn.init.xavier_uniform_}
     
-    def __init__(self, n_layers, n_neurons, initialization: str | None=None, input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, seed: int = 42):
+    def __init__(self, n_layers, n_neurons, initialization: str = '', input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None,
+                 use_rwf: bool = False, rwf_mu: float = 1.0, rwf_sigma: float = 0.1, seed: int = 42):
         """initaialization: 'xavier_normal' or 'xavier_uniform'"""
         super().__init__()
 
@@ -61,19 +134,29 @@ class FCNN(nn.Module):
         self.output_dim = 3
         self.n_layers = n_layers
         self.n_neurons = n_neurons
-    
+        # ---
+        self.use_rwf = use_rwf
+        self.rwf_mu = rwf_mu
+        self.rwf_sigma = rwf_sigma
+
         # Activation
         self.activation = nn.Tanh()
 
         self.input_transformation = input_transformation
         first_layer_in = getattr(input_transformation, 'output_dim', self.input_dim)
 
+        def make_layer(in_f: int, out_f: int) -> nn.Module:
+            if use_rwf:     
+                return RWFLinear(in_f, out_f, mu=rwf_mu, sigma=rwf_sigma, initialization=initialization)
+            else: 
+                return nn.Linear(in_f, out_f)
+            
         # Layers
         self.layers = nn.ModuleList()
-        self.layers.append(nn.Linear(first_layer_in, n_neurons))
+        self.layers.append(make_layer(first_layer_in, n_neurons))
         for _ in range(n_layers - 2):
-            self.layers.append(nn.Linear(n_neurons, n_neurons))
-        self.layers.append(nn.Linear(n_neurons, self.output_dim))
+            self.layers.append(make_layer(n_neurons, n_neurons))
+        self.layers.append(make_layer(n_neurons, self.output_dim))
 
         # Weight initializer
         self.initialization = initialization
