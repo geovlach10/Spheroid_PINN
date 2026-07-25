@@ -22,7 +22,7 @@ something theta is optimized against directly.
 from __future__ import annotations
 import torch
 
-def causal_weighted_residual(residual_terms: dict[str, torch.Tensor], weights: dict[str, torch.Tensor], t: torch.Tensor, t_bounds: tuple[float, float], n_chunks: int, eps: float, verbose: bool = False) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def causal_weighted_residual(residual_terms: dict[str, torch.Tensor], weights: dict[str, float], t: torch.Tensor, t_bounds: tuple[float, float], n_chunks: int, eps: float, verbose: bool = False) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
     """Bins already-computed PDE residuals by time and combines them with
     causal weights.
