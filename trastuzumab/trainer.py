@@ -17,6 +17,10 @@ class Trainer:
         self.current_iter: int = 0
         self.stages: list[dict] = []
         self.pde_normalized: bool = pde_normalized
+        # --- causal diagnostics history (only populated when pinn.causal=True) ---
+        self.chunk_loss_history: list[torch.Tensor] = []
+        self.chunk_weight_history: list[torch.Tensor] = []
+        self.chunk_iter: list[int] = []
 
     def train(self, optimizer: torch.optim.Optimizer, epochs: int, L: float = 1.0, log_every: int = 200, profile_every: int=0) -> 'Trainer':
         self.stages.append({
@@ -37,6 +41,7 @@ class Trainer:
             optimizer.step(closure)         # type: ignore[arg-type]
             total_loss, individual_loss_terms = self.pinn.mse_loss(w=self.weights, L=L, scaled=self.pde_normalized)
             self._record(epoch, total_loss, individual_loss_terms)
+            self._record_causal(log_every)
             self._log(epoch, total_loss, individual_loss_terms, log_every)
             self._check_outpout_profile(epoch, profile_every)
             self.current_iter += 1
@@ -63,6 +68,20 @@ class Trainer:
         self.history.setdefault('total', []).append(total.item())
         for name, value in terms.items():
             self.history.setdefault(name, []).append(value.item())
+
+    def _record_causal(self, every: int) -> None:
+        if not getattr(self.pinn, 'causal', False):
+            return
+        if self.current_iter % every != 0:
+            return
+        chunk_losses = self.pinn.meta.get('chunk_losses')
+        chunk_weights = self.pinn.meta.get('chunk_weights')
+        if chunk_losses is None or chunk_weights is None:       
+            return 
+        self.chunk_loss_history.append(chunk_losses.detach().clone())
+        self.chunk_weight_history.append(chunk_weights.detach().clone())
+        self.chunk_iter.append(self.current_iter)
+
     
     def _log(self, epoch: int, total: torch.Tensor, terms: dict[str, torch.Tensor], every: int) -> None:
         if epoch == 0:

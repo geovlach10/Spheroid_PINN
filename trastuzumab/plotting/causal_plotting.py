@@ -64,3 +64,61 @@ def plot_chunk_diagnostics(pinn: BasePinn, title: str | None):
         fig.suptitle(title)
     plt.tight_layout()
     plt.show()
+
+def plot_causal_history(loss_history: list[torch.Tensor], weight_history: list[torch.Tensor], log_every: int = 1, title: str | None = None):
+
+    """Full-training-run causal diagnostics, matching paper Fig 19
+    (loss convergence per chunk over iterations, and the min_t w(t) trace
+    that should climb toward 1 as training completes -- if it doesn't,
+    causal_eps is likely too large; see Sec 5.1).
+ 
+    Args:
+        loss_history: list of (n_chunks,) tensors, one snapshot of
+            pinn.meta['chunk_losses'] per logged iteration.
+        weight_history: same shape/cadence, from pinn.meta['chunk_weights'].
+        log_every: how many training iterations separate each snapshot --
+            only used to label the x-axis correctly.
+ 
+    Usage note -- how to build these histories during training: in your
+    training loop, every `log_every` iterations, append a *detached* copy
+    of the current chunk diagnostics:
+ 
+        loss_history.append(pinn.meta['chunk_losses'].clone())
+        weight_history.append(pinn.meta['chunk_weights'].clone())
+ 
+    then call this function once training is done (or periodically, to
+    check progress).
+    """
+
+    losses = torch.stack([l.detach().cpu() for l in loss_history]).numpy()   # (n_snapshots, n_chunks)
+    weights = torch.stack([w.detach().cpu() for w in weight_history]).numpy()
+ 
+    n_snapshots, n_chunks = losses.shape
+    iterations = np.arange(n_snapshots) * log_every
+ 
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+ 
+    # Left: per-chunk residual loss over training, one line per chunk
+    for i in range(n_chunks):
+        axes[0].plot(iterations, losses[:, i], alpha=0.7, linewidth=1)
+    axes[0].set_yscale('log')
+    axes[0].set_xlabel('iteration')
+    axes[0].set_ylabel(r'$L_r^i(\theta)$')
+    axes[0].set_title('Per-chunk residual loss over training')
+    axes[0].grid(True, linestyle='--', alpha=0.4)
+ 
+    # Right: min_t w(t) -- the key convergence diagnostic from the paper.
+    # All temporal weights are "properly minimized" once this reaches 1.
+    min_weight = weights.min(axis=1)
+    axes[1].plot(iterations, min_weight, color='tab:blue')
+    axes[1].axhline(1.0, color='gray', linestyle=':', linewidth=1)
+    axes[1].set_ylim(-0.05, 1.05)
+    axes[1].set_xlabel('iteration')
+    axes[1].set_ylabel(r'$\min_t w(t)$')
+    axes[1].set_title('Causal weight convergence')
+    axes[1].grid(True, linestyle='--', alpha=0.4)
+ 
+    if title:
+        fig.suptitle(title)
+    plt.tight_layout()
+    plt.show()
