@@ -13,33 +13,38 @@ from .datasets import DatasetSampler
 from .neural_nets import FCNN
 from .constrained_net import ConstrainedNet
 from . import constants as _CST
-
+from .causal import causal_weighted_residual
 
 
 class BasePinn(ABC):
 
     '''Model + physics + persistence. Owns the network and its training points,
     and knows how to *score itself* — but knows nothing about optimizers.'''
+
     BETA = _CST.P_STAR / _CST.D_STAR
 
-    def __init__(self, n_col: int, n_initial: int, n_center: int, n_surface: int, initial_fn: Callable, net: FCNN | ConstrainedNet | None = None, layers: int = 4, neurons: int = 16, l_bounds: tuple[float, float] = (0, 0), u_bounds: tuple[float, float] = (1.0, 1.0), device: str = 'cpu', seed: int = 42, dtype: torch.dtype = torch.float32, hard_conditions: tuple[str, ...] = ('ic', 'neumann', 'robin')):
+    def __init__(self, n_col: int, n_initial: int, n_center: int, n_surface: int, initial_fn: Callable, net: FCNN | ConstrainedNet | None = None, layers: int = 4, neurons: int = 16, l_bounds: tuple[float, float] = (0, 0), u_bounds: tuple[float, float] = (1.0, 1.0), device: str = 'cpu', seed: int = 42, dtype: torch.dtype = torch.float32, hard_conditions: tuple[str, ...] = ('ic', 'neumann', 'robin'), causal: bool = False, n_chunks: int = 24, causal_eps: float = 1.0):
         
         self.seed = seed
         self.device = device
         self.dtype = dtype
         self.meta: dict[str, Any] = {}
-
+        # ---
+        self.causal = causal
+        self.n_chunks = n_chunks
+        self.causal_eps = causal_eps
+        # ---
         self.lower_bounds = list(l_bounds)
         self.upper_bounds = list(u_bounds)
-
+        # ---
         self.n_col = n_col
         self.n_initial = n_initial
         self.n_center = n_center
         self.n_surface = n_surface
-
+        # ---
         self.initial_fn = initial_fn
         self.hard_conditions = hard_conditions
-        
+        # ---
         self.net = net if net is not None else FCNN(n_layers=layers, n_neurons=neurons, initialization='xavier_normal', seed=self.seed)
         self.net.to(self.device)
 
@@ -64,22 +69,43 @@ class BasePinn(ABC):
         center = residuals.center_neumann(net=self.net, dataset=self.center_training_dataset, target=0.0) if 'neumann' not in self.hard_conditions else torch.tensor(0.0)
         surface = residuals.surface_robin(net=self.net, dataset=self.surface_training_dataset) if 'robin' not in self.hard_conditions else torch.tensor(0.0)
 
-        
-        individual_loss_terms = {
-            'pde0': w['pde0'] * pde0.pow(2).mean(),
-            'pde1': w['pde1'] * pde1.pow(2).mean(),
-            'pde2': w['pde2'] * pde2.pow(2).mean(),
-            'ic0': w['ic0'] * ic0.pow(2).mean(),
-            'ic1': w['ic1'] * ic1.pow(2).mean(),
-            'ic2': w['ic2'] * ic2.pow(2).mean(),
-            'center': w['center'] * center.pow(2).mean(),
-            'surface': w['surface'] * surface.pow(2).mean()
-        }
-        
-        total_loss = individual_loss_terms['pde0'] + individual_loss_terms['pde1'] + individual_loss_terms['pde2'] + individual_loss_terms['ic0'] + individual_loss_terms['ic1'] + individual_loss_terms['ic2'] + individual_loss_terms['center'] + individual_loss_terms['surface']
+        if self.causal:
+            pde_loss, chunk_losses, chunk_weights = causal_weighted_residual(
+                residual_terms={'pde0': pde0, 'pde1': pde1, 'pde2': pde2},
+                weights={'pde0': w['pde0'], 'pde1': w['pde1'], 'pde2': w['pde2']},
+                t=self.collocation_training_dataset.t,
+                t_bounds=(self.lower_bounds[1], self.upper_bounds[1]),
+                n_chunks=self.n_chunks,
+                eps=self.causal_eps
+            )
+            self.meta['chunk_losses'] = chunk_losses
+            self.meta['chunk_weights'] = chunk_weights
 
-        individual_loss_terms.update(self._extra_loss_term(L))      # Adds data loss term at inverse problems.
-        return total_loss, individual_loss_terms
+            individual_weighted_loss_terms = {
+                'pde': pde_loss,
+                'ic0': w['ic0'] * ic0.pow(2).mean(),
+                'ic1': w['ic1'] * ic1.pow(2).mean(),
+                'ic2': w['ic2'] * ic2.pow(2).mean(),
+                'center': w['center'] * center.pow(2).mean(),
+                'surface': w['surface'] * surface.pow(2).mean()
+            }
+
+        else:
+            individual_weighted_loss_terms = {
+                'pde0': w['pde0'] * pde0.pow(2).mean(),
+                'pde1': w['pde1'] * pde1.pow(2).mean(),
+                'pde2': w['pde2'] * pde2.pow(2).mean(),
+                'ic0': w['ic0'] * ic0.pow(2).mean(),
+                'ic1': w['ic1'] * ic1.pow(2).mean(),
+                'ic2': w['ic2'] * ic2.pow(2).mean(),
+                'center': w['center'] * center.pow(2).mean(),
+                'surface': w['surface'] * surface.pow(2).mean()
+            }
+
+        total_loss = torch.stack(list(individual_weighted_loss_terms.values())).sum()
+
+        individual_weighted_loss_terms.update(self._extra_loss_term(L))      # Adds data loss term at inverse problems.
+        return total_loss, individual_weighted_loss_terms
     
     @abstractmethod
     def _extra_loss_term(self, L: float) -> dict[str, torch.Tensor]:
