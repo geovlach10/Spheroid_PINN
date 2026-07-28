@@ -69,6 +69,13 @@ class BasePinn(ABC):
         center = residuals.center_neumann(net=self.net, dataset=self.center_training_dataset, target=0.0) if 'neumann' not in self.hard_conditions else torch.tensor(0.0)
         surface = residuals.surface_robin(net=self.net, dataset=self.surface_training_dataset) if 'robin' not in self.hard_conditions else torch.tensor(0.0)
 
+        raw_loss_terms = {
+            'pde0': pde0.pow(2).mean(), 'pde1': pde1.pow(2).mean(), 'pde2': pde2.pow(2).mean(),
+            'ic0': ic0.pow(2).mean(), 'ic1': ic1.pow(2).mean(), 'ic2': ic2.pow(2).mean(),
+            'center': center.pow(2).mean(), 'surface': surface.pow(2).mean(),
+        }
+        self.meta['raw_loss_terms'] = raw_loss_terms
+
         if self.causal:
             pde_loss, chunk_losses, chunk_weights = causal_weighted_residual(
                 residual_terms={'pde0': pde0, 'pde1': pde1, 'pde2': pde2},
@@ -80,6 +87,7 @@ class BasePinn(ABC):
             )
             self.meta['chunk_losses'] = chunk_losses
             self.meta['chunk_weights'] = chunk_weights
+            raw_loss_terms['pde'] = raw_loss_terms['pde0'] + raw_loss_terms['pde1'] + raw_loss_terms['pde2']
 
             individual_weighted_loss_terms = {
                 'pde': pde_loss,

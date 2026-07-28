@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import torch
 from .pinns import BasePinn
+from .weighting import GradNormWeighter
 from datetime import datetime
 
 _MODELS_DIR = Path(__file__).parent.parent / 'models'
@@ -10,7 +11,8 @@ class Trainer:
 
     """it is responsible for optimization, loss weighting and logging"""
 
-    def __init__(self, pinn: BasePinn, weights: dict[str, float], pde_normalized: bool = False):
+    def __init__(self, pinn: BasePinn, weights: dict[str, float], pde_normalized: bool = False,
+                 use_gradnorm: bool = False, gradnorm_alpha: float = 0.9, gradnorm_update_every: int = 1000):
         self.pinn = pinn
         self.weights: dict[str, float] = dict(weights)
         self.history: dict[str, list[float]] = {}
@@ -21,6 +23,10 @@ class Trainer:
         self.chunk_loss_history: list[torch.Tensor] = []
         self.chunk_weight_history: list[torch.Tensor] = []
         self.chunk_iter: list[int] = []
+        # --- gradient-norm loss balancing (eq 2.12-2.15) ---
+        self.use_gradnorm = use_gradnorm
+        self.gradnorm_weighter = GradNormWeighter(alpha=gradnorm_alpha, update_every=gradnorm_update_every) if use_gradnorm else None
+        self.gradnorm_history: list = []
 
     def train(self, optimizer: torch.optim.Optimizer, epochs: int, L: float = 1.0, log_every: int = 200, profile_every: int=0) -> 'Trainer':
         self.stages.append({
@@ -42,12 +48,46 @@ class Trainer:
             total_loss, individual_loss_terms = self.pinn.mse_loss(w=self.weights, L=L, scaled=self.pde_normalized)
             self._record(epoch, total_loss, individual_loss_terms)
             self._record_causal(log_every)
+            self._apply_gradnorm()
             self._log(epoch, total_loss, individual_loss_terms, log_every)
             self._check_outpout_profile(epoch, profile_every)
             self.current_iter += 1
 
         return self
+
     
+    def _apply_gradnorm(self) -> None:
+
+        """Updates self.weights via gradient-norm loss balancing (eq
+        2.12-2.15), sourced from self.pinn.meta['raw_loss_terms'] -- the
+        *unweighted* per-term losses mse_loss() exposes alongside its
+        normal (weighted) return value."""
+
+        if self.gradnorm_weighter is None:
+            return
+        raw: dict[str, torch.Tensor] | None = self.pinn.meta.get('raw_loss_terms')
+        if raw is None:
+            return
+        
+        group_losses = {
+            'ic': raw['ic0'] + raw['ic1'] + raw['ic2'],
+            'bc': raw['center'] + raw['surface'],
+            'r': raw.get('pde', raw['pde0'] + raw['pde1'] + raw['pde2']),
+        }       
+
+        lambdas = self.gradnorm_weighter.step(group_losses, params=list(self.pinn.net.parameters()), iteration=self.current_iter)
+        self.weights['ic0'] = self.weights['ic1'] = self.weights['ic2'] = lambdas.ic
+        self.weights['center'] = self.weights['surface'] = lambdas.bc
+
+        if 'pde' in raw and getattr(self.pinn, 'causal', False):
+            self.weights['pde'] = lambdas.r
+        else:
+            self.weights['pde0'] = self.weights['pde1'] = self.weights['pde2'] = lambdas.r
+
+        if self.current_iter % self.gradnorm_weighter.update_every == 0:
+            self.gradnorm_history.append(lambdas)
+
+
     def save(self, path: str | Path | None = None) -> None:
         path = _MODELS_DIR / 'model.pt' if path is None else Path(path)
         if not path.is_absolute() and path.parent == Path('.'):
