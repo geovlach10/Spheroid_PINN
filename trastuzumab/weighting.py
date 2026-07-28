@@ -51,11 +51,13 @@ def _grad_norm(loss: torch.Tensor, params: list[torch.nn.Parameter]) -> float:
     parameter tensors, returned as a plain float rather than a 0-dim Tensor."""
 
     grads = torch.autograd.grad(loss, params, retain_graph=True, allow_unused=True)
-    flattened_grads = torch.cat([g.flatten() for g in grads if g is not None])
-    return flattened_grads.norm().item()
+    flat_list = [g.flatten() for g in grads if g is not None]
+    if not flat_list:
+        return 0.0
+    return torch.cat(flat_list).norm().item()
 
 
-def gradient_norm_lambdas(group_losses: dict[str, torch.Tensor], params: list[torch.nn.Parameter]) -> GroupLambdas:
+def gradient_norm_lambdas(group_losses: dict[str, torch.Tensor], params: list[torch.nn.Parameter], previous: GroupLambdas | None) -> GroupLambdas:
 
     """Computes lambda_hat_g for each group, per eq (2.12)-(2.14).
  
@@ -74,7 +76,16 @@ def gradient_norm_lambdas(group_losses: dict[str, torch.Tensor], params: list[to
 
     norms: dict[str, float] = {name: _grad_norm(loss, params) for name, loss in group_losses.items()}
     total = sum(norms.values())
-    return GroupLambdas(**{name: total/n for name, n in norms.items()})
+
+    result: dict[str, float] = {}
+    for name, n in norms.items():
+        if n == 0.0:
+            fallback = getattr(previous, name) if previous is not None else 1.0
+            result[name] = fallback
+        else:
+            result[name] = total / n
+
+    return GroupLambdas(**result)
 
 
 class GradNormWeighter:
@@ -108,7 +119,7 @@ class GradNormWeighter:
 
     def step(self, group_losses: dict[str, torch.Tensor], params: list[torch.nn.Parameter], iteration: int) -> GroupLambdas:
         if iteration % self.update_every == 0:
-            lambda_hat = gradient_norm_lambdas(group_losses, params)
+            lambda_hat = gradient_norm_lambdas(group_losses, params, previous=self.lambdas)
             self.lambdas = GroupLambdas(
                 ic=self.alpha * self.lambdas.ic + (1 - self.alpha) * lambda_hat.ic,
                 bc=self.alpha * self.lambdas.bc + (1 - self.alpha) * lambda_hat.bc,
