@@ -1,22 +1,21 @@
 """PINN network backbones for the Trastuzumab spheroid model.
 
-Defines the input-embedding / weight-factorization building blocks and the
-concrete feedforward architectures that consume them:
+Defines the weight-factorization building block and the concrete
+feedforward architectures that consume it:
 
-    FourierFeatures   -- input embedding (eq. 4.3, Wang et al. 2023)
     RWFLinear         -- weight-factorized nn.Linear replacement (eq. 4.4-4.5)
     BaseMLP           -- abstract backbone: owns everything shared between
                          concrete architectures (construction bookkeeping,
                          layer factory, weight init, transformation hooks,
                          hard-IC output convention)
-    MLP               -- standard feedforward backbone (formerly FCNN)
+    FCNN              -- standard feedforward backbone
     ModifiedMLP       -- gated-encoder backbone (eq. 6.7-6.11)
 
-All three concrete/embedding classes are drop-in composable: a BaseMLP
-subclass takes an optional `input_transformation` (e.g. a FourierFeatures
-instance) applied once, upstream of the backbone's own layers, and an
-optional `use_rwf` flag that swaps every internal nn.Linear for an
-RWFLinear via the shared `_make_layer` factory.
+Both concrete backbones are drop-in composable: a BaseMLP subclass takes
+an optional `input_transformation` (e.g. a FourierFeatures instance, see
+trastuzumab.embeddings) applied once, upstream of the backbone's own
+layers, and an optional `use_rwf` flag that swaps every internal
+nn.Linear for an RWFLinear via the shared `_make_layer` factory.
 
 `BaseMLP` is the type the rest of the codebase should depend on --
 `BasePinn.net`, `Trainer`, checkpoint (de)serialization -- rather than any
@@ -37,42 +36,265 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class FourierFeatures(nn.Module):
+class BaseMLP(nn.Module, ABC):
 
-    B: torch.Tensor
+    """Abstract base class for PINN network backbones (MLP, ModifiedMLP, ...).
 
-    """Random Fourier feature embedding, per Wang, Sankaran, Wang & Perdikaris
-    (2023), "An Expert's Guide to Training Physics-Informed Neural Networks",
-    eq. (4.3):
- 
-        gamma(x) = [cos(Bx), sin(Bx)],   B_ij ~ N(0, sigma^2)
-        
-    Args:
-        input_dim: dimensionality of the raw input (2 for (r, t)).
-        mapping_size: number of random frequencies. Output dim = 2*mapping_size.
-        sigma: std-dev of the sampled frequencies B_ij ~ N(0, sigma^2).
-            Larger sigma -> higher frequencies representable -> more
-            expressive but harder to optimize / more prone to noise-fitting.
-            Paper recommends sigma in [1, 10]; sweep within that range.
-        seed: separate from the FCNN seed so you can vary the embedding
-            independently of the weight init if you want to.
+    This is the type the rest of the codebase (BasePinn, Trainer,
+    ConstrainedNet, checkpointing) should depend on -- e.g. `net: BaseMLP`
+    -- rather than any concrete subclass. `isinstance(net, BaseMLP)` works
+    directly, since this is real inheritance.
+
+    Owns every part of a PINN backbone that doesn't vary between concrete
+    subclasses: construction bookkeeping, the RWF-vs-plain nn.Linear layer
+    factory, weight initialization, the input/output transformation hooks,
+    and the hard-IC output convention (architecturally constrained:
+    C(r, 0) = 0 for every t = 0, via t * u).
+
+    Attributes (set in __init__, all subclasses inherit these as-is):
+        seed: RNG seed used for both torch.manual_seed and reproducibility
+            bookkeeping (e.g. checkpoint metadata).
+        input_dim: raw coordinate dimensionality (2, for (r, t)).
+        output_dim: raw prediction dimensionality (3, for (c0, c1, c2)).
+        n_layers, n_neurons: architecture size, as passed at construction.
+        use_rwf, rwf_mu, rwf_sigma: RWF configuration, consumed by
+            _make_layer.
+        activation: nn.Tanh(), shared by every subclass's hidden layers.
+        input_transformation, output_transformation: optional callables
+            applied before/after the subclass-specific hidden computation.
+        first_layer_in: input width of the first layer -- input_dim, or
+            input_transformation.output_dim if an input_transformation
+            with that property was supplied.
     """
-    def __init__(self, input_dim: int=2, mapping_size: int=64, sigma: float=1.0, seed: int=42):
+
+    _INITS = {'xavier_normal': nn.init.xavier_normal_, 'xavier_uniform': nn.init.xavier_uniform_}
+        
+    def __init__(self, in_dim: int, out_dim: int, n_layers: int, n_neurons: int, activation_instance: nn.Module = nn.Tanh(), initialization: str = '', input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None,
+                    use_rwf: bool = False, rwf_mu: float = 1.0, rwf_sigma: float = 0.1, seed: int = 42):
+        """
+        Args:
+            n_layers: total layer count as counted by the concrete subclass
+                (for MLP: 1 first-hidden + (n_layers-2) mid-hidden + 1
+                output; ModifiedMLP counts its main stack the same way,
+                excluding the two encoders and the output layer).
+            n_neurons: hidden width, uniform across all hidden layers.
+            initialization: 'xavier_normal' or 'xavier_uniform'; passed
+                through to _initialize_weights, and to RWFLinear's own V
+                init if use_rwf=True. Empty string / falsy -> no init
+                (weights keep PyTorch's default init).
+            input_transformation: optional callable (e.g. FourierFeatures)
+                applied to the concatenated (r, t) input before it reaches
+                the backbone. If it exposes an `output_dim` attribute,
+                that's used to size the first layer; otherwise input_dim
+                (2) is assumed.
+            output_transformation: optional callable applied to the raw
+                network output before the hard-IC t-multiply.
+            use_rwf, rwf_mu, rwf_sigma: see RWFLinear. When use_rwf=True,
+                every layer built via _make_layer is an RWFLinear instead
+                of an nn.Linear.
+            seed: seeds torch.manual_seed for reproducible weight init,
+                and is stored for checkpoint bookkeeping.
+        """
         super().__init__()
-        self.input_dim = input_dim
-        self.mapping_size = mapping_size
-        self.sigma = sigma
 
-        generator = torch.Generator().manual_seed(seed)
-        B = torch.randn([input_dim, mapping_size], generator=generator) * sigma
-        self.register_buffer('B', B)
+        # Reproducibility
+        self.seed = seed
+        torch.manual_seed(self.seed)
 
-    @property
-    def output_dim(self) -> int:
-        return 2 * self.mapping_size
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.cat([torch.cos(x @ self.B), torch.sin(x @ self.B)], dim=-1)
+        # Network attributes
+        self.input_dim = in_dim
+        self.output_dim = out_dim
+        self.n_layers = n_layers
+        self.n_neurons = n_neurons
+
+        # RWF
+        self.use_rwf = use_rwf
+        self.rwf_mu = rwf_mu
+        self.rwf_sigma = rwf_sigma
+
+        # Activation fn
+        self.activation_fn = activation_instance
+        self.initialization = initialization
+        self.input_transformation = input_transformation
+        self.output_transformation = output_transformation
+        self.first_layer_in = getattr(input_transformation, 'output_dim', self.input_dim)
+
+        self._build_layers(n_layers, n_neurons)
+        self._initialize_weights(self.initialization)
+
+    def _make_layer(self, in_f, out_f) -> nn.Module:
+
+        """RWF-vs-plain nn.Linear switch, shared by every subclass so they
+        can't drift out of sync on how a layer gets constructed.
+
+        Args:
+            `in_f`, 
+            `out_f`: layer input/output width.
+
+        Returns:
+            `RWFLinear`(in_f, out_f, ...) if self.use_rwf else nn.Linear(in_f, out_f).
+        """
+
+        if self.use_rwf:
+            return RWFLinear(in_f, out_f, mu=self.rwf_mu, sigma=self.rwf_sigma, initialization=self.initialization)
+        return nn.Linear(in_f, out_f)
+
+    @abstractmethod
+    def _build_layers(self, n_layers: int, n_neurons: int) -> None:
+
+        """Register whatever modules this backbone needs (self.layers,
+        encoders, etc), via self._make_layer. Called once, from __init__,
+        before weight init -- so every parameter this method registers
+        gets picked up by _initialize_weights's self.modules() walk.
+
+        Args:
+            n_layers, n_neurons: as passed to __init__.
+        """
+        ...
+
+
+    @abstractmethod
+    def _compute_hidden(self, x: torch.Tensor) -> torch.Tensor:
+
+        """(embedded) input -> raw network output, pre output_transformation.
+        This is the one method that actually varies between backbones --
+        everything else in forward() is identical across subclasses.
+
+        Args:
+            x: (N, first_layer_in) -- the (possibly input_transformation-
+                embedded) coordinate batch.
+
+        Returns:
+            (N, output_dim) raw prediction, before output_transformation
+            and before the hard-IC t-multiply.
+        """
+        ...
+
+
+    def forward(self, r: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+
+        """Full forward pass, identical across all BaseMLP subclasses.
+
+        Args:
+            r: (N, 1) radial coordinate.
+            t: (N, 1) time coordinate.
+
+        Returns:
+            (N, output_dim) prediction -- (c0, c1, c2) columns for this
+            project -- with C(r, 0) = 0 enforced architecturally for every
+            t = 0 (final t * u multiply).
+        """
+
+        x = torch.cat([r, t], dim=1)
+
+        # 1. input transformation (e.g. Fourier features).
+        if self.input_transformation is not None:
+            x = self.input_transformation(x)
+
+        # 2. backbone-specific hidden computation.
+        u = self._compute_hidden(x)
+
+        # 3. output transformation.
+        if self.output_transformation is not None:
+            u = self.output_transformation(u)
+
+        return t * u        # architecturally constrained to produce C(r, 0) = 0 for every t = 0.
+
+
+    def _initialize_weights(self, initialization: str | None) -> None:
+        """Applies `initialization` to every nn.Linear.
+
+        Args:
+            initialization: 'xavier_normal', 'xavier_uniform', or None/''
+                (no-op -- weights keep PyTorch's default init).
+        """
+        if initialization == '':    return
+        if initialization is not None:
+            for layer in self.modules():
+                if isinstance(layer, nn.Linear):
+                    self._INITS[initialization](layer.weight)
+                    if layer.bias is not None:
+                        nn.init.zeros_(layer.bias)
+            print(f'neural network weights initialized succesfully - initializer: {initialization}')
+        else:
+            print('weight have not been initialized.')
+
+
+class FCNN(BaseMLP):
+
+    """Standard feedforward neural nettwork.
+
+    n_layers total: 1 first-hidden layer (input -> n_neurons), (n_layers-2)
+    mid-hidden layers (n_neurons -> n_neurons), 1 output layer
+    (n_neurons -> output_dim, no activation).
+    """
+
+    def _build_layers(self, n_layers: int, n_neurons: int) -> None:
+        """Builds self.layers: [first-hidden, *mid-hidden, output]."""
+        self.layers = nn.ModuleList()
+        self.layers.append(self._make_layer(self.first_layer_in, n_neurons))
+        for _ in range(n_layers - 2):
+            self.layers.append(self._make_layer(n_neurons, n_neurons))
+        self.layers.append(self._make_layer(n_neurons, self.output_dim))
+
+    def _compute_hidden(self, x: torch.Tensor) -> torch.Tensor:
+        """Feeds x through every hidden layer (activation applied), then
+        the output layer (no activation)."""
+        for layer in self.layers[:-1]:
+            x = self.activation_fn(layer(x))
+        return self.layers[-1](x)     
+
+class ModifiedMLP(BaseMLP):
+
+    """Modified MLP w/ gated encoder fusion, per Wang, Sankaran, Wang &
+    Perdikaris (2023), Sec. 6.4, eqs. (6.7)-(6.11).
+
+    Two encoders U, V are computed once from the (embedded) input and
+    re-injected at every hidden layer via a learned convex gate:
+
+        U = sigma(W1 x + b1),  V = sigma(W2 x + b2)                  (6.7)
+        f^(l) = W^(l) g^(l-1) + b^(l),      g^(0)(x) = x              (6.8)
+        g^(l) = sigma(f^(l)) * U + (1 - sigma(f^(l))) * V            (6.9)
+        f_theta(x) = W^(L+1) g^(L) + b^(L+1)                         (6.10)
+
+    In practice, demands more compute than MLP but tends to lower PDE
+    residuals / yield more accurate results (paper, Sec 6.4).
+
+    n_layers total: counted the same way as MLP for the main stack (1
+    first-hidden + (n_layers-2) mid-hidden), EXCLUDING encoder_U/encoder_V
+    and the final output_layer, which are separate, always-present modules.
+    """
+
+    def _build_layers(self, n_layers: int, n_neurons: int) -> None:
+
+        """Builds encoder_U, encoder_V (eq. 6.7), self.layers (the f^(l)
+        stack, eq. 6.8), and output_layer (eq. 6.10)."""
+
+        self.encoder_U = self._make_layer(self.first_layer_in, n_neurons)
+        self.encoder_V = self._make_layer(self.first_layer_in, n_neurons)
+
+        self.layers = nn.ModuleList()
+        self.layers.append(self._make_layer(self.first_layer_in, n_neurons))
+        for _ in range(n_layers - 2):
+            self.layers.append(self._make_layer(n_neurons, n_neurons))
+
+        self.output_layer = self._make_layer(n_neurons, self.output_dim)
+
+    def _compute_hidden(self, x: torch.Tensor) -> torch.Tensor:
+
+        """Computes U, V (eq. 6.7), then runs the gated recursion of eq.
+        6.8-6.9 through self.layers, then the output layer (eq. 6.10)."""
+
+        U = self.activation_fn(self.encoder_U(x))
+        V = self.activation_fn(self.encoder_V(x))
+
+        g = x
+        for layer in self.layers:
+            gate = self.activation_fn(layer(g))
+            g = gate * U + (1.0 - gate) * V
+
+        return self.output_layer(g)
+
 
 class RWFLinear(nn.Module):
 
@@ -148,82 +370,3 @@ class RWFLinear(nn.Module):
         return f'RWFLinear(in_features={self.in_features}, out_features={self.out_features}, mu={self.mu}, sigma={self.sigma})'
     
 
-class FCNN(nn.Module):
-
-    _INITS = {'xavier_normal': nn.init.xavier_normal_, 'xavier_uniform': nn.init.xavier_uniform_}
-    
-    def __init__(self, n_layers, n_neurons, initialization: str = '', input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None,
-                 use_rwf: bool = False, rwf_mu: float = 1.0, rwf_sigma: float = 0.1, seed: int = 42):
-        """initaialization: 'xavier_normal' or 'xavier_uniform'"""
-        super().__init__()
-
-        # Reproducibility
-        self.seed = seed
-        torch.manual_seed(self.seed)
-
-        # Network attributes
-        self.input_dim = 2
-        self.output_dim = 3
-        self.n_layers = n_layers
-        self.n_neurons = n_neurons
-        # ---
-        self.use_rwf = use_rwf
-        self.rwf_mu = rwf_mu
-        self.rwf_sigma = rwf_sigma
-
-        # Activation
-        self.activation = nn.Tanh()
-
-        self.input_transformation = input_transformation
-        first_layer_in = getattr(input_transformation, 'output_dim', self.input_dim)
-
-        def make_layer(in_f: int, out_f: int) -> nn.Module:
-            if use_rwf:     
-                return RWFLinear(in_f, out_f, mu=rwf_mu, sigma=rwf_sigma, initialization=initialization)
-            else: 
-                return nn.Linear(in_f, out_f)
-            
-        # Layers
-        self.layers = nn.ModuleList()
-        self.layers.append(make_layer(first_layer_in, n_neurons))
-        for _ in range(n_layers - 2):
-            self.layers.append(make_layer(n_neurons, n_neurons))
-        self.layers.append(make_layer(n_neurons, self.output_dim))
-
-        # Weight initializer
-        self.initialization = initialization
-        self._initialize_weights(self.initialization)
-        
-        
-        self.output_transformation = output_transformation
-
-    def forward(self, r: torch.Tensor, t:torch.Tensor) -> torch.Tensor:
-        x = torch.cat([r, t], dim=1)
-
-        # 1. input transformation.
-        if self.input_transformation is not None:
-            x = self.input_transformation(x)
-
-        # 2. Feedforward through all hidden layers except the output layer
-        for layer in self.layers[:-1]:
-            x = self.activation(layer(x))
-
-        # 3.Output layer (No activation).
-        u = self.layers[-1](x)
-
-        # 4. Output transformation.
-        if self.output_transformation is not None:
-            u = self.output_transformation(u)
-        
-        return t * u        # architecturaly constrained to produce C(r, 0) = 0 for every t = 0.
-    
-    def _initialize_weights(self, initialization: str | None):
-        if initialization is not None:
-            for layer in self.layers:
-                if isinstance(layer, nn.Linear):
-                    self._INITS[initialization](layer.weight)
-                    if layer.bias is not None:
-                        nn.init.zeros_(layer.bias)
-            print(f'neural network weights initialized succesfully - initializer: {initialization}')
-        else:
-            print('weight have not been initialized.')
