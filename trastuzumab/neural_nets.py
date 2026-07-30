@@ -1,4 +1,36 @@
+"""PINN network backbones for the Trastuzumab spheroid model.
+
+Defines the input-embedding / weight-factorization building blocks and the
+concrete feedforward architectures that consume them:
+
+    FourierFeatures   -- input embedding (eq. 4.3, Wang et al. 2023)
+    RWFLinear         -- weight-factorized nn.Linear replacement (eq. 4.4-4.5)
+    BaseMLP           -- abstract backbone: owns everything shared between
+                         concrete architectures (construction bookkeeping,
+                         layer factory, weight init, transformation hooks,
+                         hard-IC output convention)
+    MLP               -- standard feedforward backbone (formerly FCNN)
+    ModifiedMLP       -- gated-encoder backbone (eq. 6.7-6.11)
+
+All three concrete/embedding classes are drop-in composable: a BaseMLP
+subclass takes an optional `input_transformation` (e.g. a FourierFeatures
+instance) applied once, upstream of the backbone's own layers, and an
+optional `use_rwf` flag that swaps every internal nn.Linear for an
+RWFLinear via the shared `_make_layer` factory.
+
+`BaseMLP` is the type the rest of the codebase should depend on --
+`BasePinn.net`, `Trainer`, checkpoint (de)serialization -- rather than any
+concrete subclass. Adding a new backbone architecture means subclassing
+BaseMLP and implementing `_build_layers` / `_compute_hidden`; nothing
+elsewhere in the codebase needs to change (open/closed).
+
+Reference: Wang, Sankaran, Wang & Perdikaris (2023), "An Expert's Guide to
+Training Physics-Informed Neural Networks."
+"""
+
+
 from __future__ import annotations
+from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
 import torch
@@ -195,6 +227,3 @@ class FCNN(nn.Module):
             print(f'neural network weights initialized succesfully - initializer: {initialization}')
         else:
             print('weight have not been initialized.')
-        
-
-
