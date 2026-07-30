@@ -209,6 +209,7 @@ class BaseMLP(nn.Module, ABC):
             initialization: 'xavier_normal', 'xavier_uniform', or None/''
                 (no-op -- weights keep PyTorch's default init).
         """
+        if initialization == '':    return
         if initialization is not None:
             for layer in self.modules():
                 if isinstance(layer, nn.Linear):
@@ -219,6 +220,32 @@ class BaseMLP(nn.Module, ABC):
         else:
             print('weight have not been initialized.')
 
+
+class FCNN(BaseMLP):
+
+    """Standard feedforward neural nettwork.
+
+    n_layers total: 1 first-hidden layer (input -> n_neurons), (n_layers-2)
+    mid-hidden layers (n_neurons -> n_neurons), 1 output layer
+    (n_neurons -> output_dim, no activation).
+    """
+
+    def _build_layers(self, n_layers: int, n_neurons: int) -> None:
+        """Builds self.layers: [first-hidden, *mid-hidden, output]."""
+        self.layers = nn.ModuleList()
+        self.layers.append(self._make_layer(self.first_layer_in, n_neurons))
+        for _ in range(n_layers - 2):
+            self.layers.append(self._make_layer(n_neurons, n_neurons))
+        self.layers.append(self._make_layer(n_neurons, self.output_dim))
+
+    def _compute_hidden(self, x: torch.Tensor) -> torch.Tensor:
+        """Feeds x through every hidden layer (activation applied), then
+        the output layer (no activation)."""
+        for layer in self.layers[:-1]:
+            x = self.activation_fn(layer(x))
+        return self.layers[-1](x)      
+
+    
 class FourierFeatures(nn.Module):
 
     B: torch.Tensor
