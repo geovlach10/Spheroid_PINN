@@ -1,22 +1,21 @@
 """PINN network backbones for the Trastuzumab spheroid model.
 
-Defines the input-embedding / weight-factorization building blocks and the
-concrete feedforward architectures that consume them:
+Defines the weight-factorization building block and the concrete
+feedforward architectures that consume it:
 
-    FourierFeatures   -- input embedding (eq. 4.3, Wang et al. 2023)
     RWFLinear         -- weight-factorized nn.Linear replacement (eq. 4.4-4.5)
     BaseMLP           -- abstract backbone: owns everything shared between
                          concrete architectures (construction bookkeeping,
                          layer factory, weight init, transformation hooks,
                          hard-IC output convention)
-    MLP               -- standard feedforward backbone (formerly FCNN)
+    FCNN              -- standard feedforward backbone
     ModifiedMLP       -- gated-encoder backbone (eq. 6.7-6.11)
 
-All three concrete/embedding classes are drop-in composable: a BaseMLP
-subclass takes an optional `input_transformation` (e.g. a FourierFeatures
-instance) applied once, upstream of the backbone's own layers, and an
-optional `use_rwf` flag that swaps every internal nn.Linear for an
-RWFLinear via the shared `_make_layer` factory.
+Both concrete backbones are drop-in composable: a BaseMLP subclass takes
+an optional `input_transformation` (e.g. a FourierFeatures instance, see
+trastuzumab.embeddings) applied once, upstream of the backbone's own
+layers, and an optional `use_rwf` flag that swaps every internal
+nn.Linear for an RWFLinear via the shared `_make_layer` factory.
 
 `BaseMLP` is the type the rest of the codebase should depend on --
 `BasePinn.net`, `Trainer`, checkpoint (de)serialization -- rather than any
@@ -296,44 +295,6 @@ class ModifiedMLP(BaseMLP):
 
         return self.output_layer(g)
 
-
-    
-class FourierFeatures(nn.Module):
-
-    B: torch.Tensor
-
-    """Random Fourier feature embedding, per Wang, Sankaran, Wang & Perdikaris
-    (2023), "An Expert's Guide to Training Physics-Informed Neural Networks",
-    eq. (4.3):
- 
-        gamma(x) = [cos(Bx), sin(Bx)],   B_ij ~ N(0, sigma^2)
-        
-    Args:
-        input_dim: dimensionality of the raw input (2 for (r, t)).
-        mapping_size: number of random frequencies. Output dim = 2*mapping_size.
-        sigma: std-dev of the sampled frequencies B_ij ~ N(0, sigma^2).
-            Larger sigma -> higher frequencies representable -> more
-            expressive but harder to optimize / more prone to noise-fitting.
-            Paper recommends sigma in [1, 10]; sweep within that range.
-        seed: separate from the FCNN seed so you can vary the embedding
-            independently of the weight init if you want to.
-    """
-    def __init__(self, input_dim: int=2, mapping_size: int=64, sigma: float=1.0, seed: int=42):
-        super().__init__()
-        self.input_dim = input_dim
-        self.mapping_size = mapping_size
-        self.sigma = sigma
-
-        generator = torch.Generator().manual_seed(seed)
-        B = torch.randn([input_dim, mapping_size], generator=generator) * sigma
-        self.register_buffer('B', B)
-
-    @property
-    def output_dim(self) -> int:
-        return 2 * self.mapping_size
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.cat([torch.cos(x @ self.B), torch.sin(x @ self.B)], dim=-1)
 
 class RWFLinear(nn.Module):
 
