@@ -243,7 +243,59 @@ class FCNN(BaseMLP):
         the output layer (no activation)."""
         for layer in self.layers[:-1]:
             x = self.activation_fn(layer(x))
-        return self.layers[-1](x)      
+        return self.layers[-1](x)     
+
+class ModifiedMLP(BaseMLP):
+
+    """Modified MLP w/ gated encoder fusion, per Wang, Sankaran, Wang &
+    Perdikaris (2023), Sec. 6.4, eqs. (6.7)-(6.11).
+
+    Two encoders U, V are computed once from the (embedded) input and
+    re-injected at every hidden layer via a learned convex gate:
+
+        U = sigma(W1 x + b1),  V = sigma(W2 x + b2)                  (6.7)
+        f^(l) = W^(l) g^(l-1) + b^(l),      g^(0)(x) = x              (6.8)
+        g^(l) = sigma(f^(l)) * U + (1 - sigma(f^(l))) * V            (6.9)
+        f_theta(x) = W^(L+1) g^(L) + b^(L+1)                         (6.10)
+
+    In practice, demands more compute than MLP but tends to lower PDE
+    residuals / yield more accurate results (paper, Sec 6.4).
+
+    n_layers total: counted the same way as MLP for the main stack (1
+    first-hidden + (n_layers-2) mid-hidden), EXCLUDING encoder_U/encoder_V
+    and the final output_layer, which are separate, always-present modules.
+    """
+
+    def _build_layers(self, n_layers: int, n_neurons: int) -> None:
+
+        """Builds encoder_U, encoder_V (eq. 6.7), self.layers (the f^(l)
+        stack, eq. 6.8), and output_layer (eq. 6.10)."""
+
+        self.encoder_U = self._make_layer(self.first_layer_in, n_neurons)
+        self.encoder_V = self._make_layer(self.first_layer_in, n_neurons)
+
+        self.layers = nn.ModuleList()
+        self.layers.append(self._make_layer(self.first_layer_in, n_neurons))
+        for _ in range(n_layers - 2):
+            self.layers.append(self._make_layer(n_neurons, n_neurons))
+
+        self.output_layer = self._make_layer(n_neurons, self.output_dim)
+
+    def _compute_hidden(self, x: torch.Tensor) -> torch.Tensor:
+
+        """Computes U, V (eq. 6.7), then runs the gated recursion of eq.
+        6.8-6.9 through self.layers, then the output layer (eq. 6.10)."""
+
+        U = self.activation_fn(self.encoder_U(x))
+        V = self.activation_fn(self.encoder_V(x))
+
+        g = x
+        for layer in self.layers:
+            gate = self.activation_fn(layer(g))
+            g = gate * U + (1.0 - gate) * V
+
+        return self.output_layer(g)
+
 
     
 class FourierFeatures(nn.Module):
