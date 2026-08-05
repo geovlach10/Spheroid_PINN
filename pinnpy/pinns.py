@@ -8,11 +8,11 @@ import matplotlib.pyplot as plt
 
 import torch
 
-from . import residuals
+from trastuzumab import residuals
 from .datasets import DatasetSampler
 from .neural_nets import BaseMLP, FCNN
 from .constrained_net import ConstrainedNet
-from . import constants as _CST
+from trastuzumab import constants as _CST
 from .causal import causal_weighted_residual
 
 

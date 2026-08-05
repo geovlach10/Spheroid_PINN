@@ -2,9 +2,9 @@ from __future__ import annotations
 from typing import Callable
 
 import torch 
-from .neural_nets import BaseMLP
-from .constrained_net import ConstrainedNet
-from .datasets import Dataset
+from pinnpy.neural_nets import BaseMLP
+from pinnpy.constrained_net import ConstrainedNet
+from pinnpy.datasets import Dataset
 from . import constants as _CON
 
 ## porosity profiles.

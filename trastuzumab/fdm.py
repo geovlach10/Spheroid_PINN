@@ -184,7 +184,7 @@ uptake/clearance model.
 
 Method of lines: discretize the radial operator into a matrix, then hand the
 resulting stiff ODE system to scipy's BDF integrator. Physics is imported
-from pinnpy.constants, so this solver and the PINN consume identical
+from trastuzumab.constants, so this solver and the PINN consume identical
 parameters by construction.
 
 Scope: uptake (primary), clearance (dormant scaffolding). Fishing removed.

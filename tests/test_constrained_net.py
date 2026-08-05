@@ -1,7 +1,7 @@
 import torch
 from pinnpy.neural_nets import FCNN
 from pinnpy.constrained_net import ConstrainedNet
-from pinnpy.residuals import phi
+from trastuzumab.residuals import phi
 
 BETA, CSOL, EPS = 2.3, 1.0, 0.01
 
