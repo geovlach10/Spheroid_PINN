@@ -44,7 +44,7 @@ $$
 ## 🏗️ Architecture
 
 ```
-trastuzumab/
+pinnpy/
 ├── neural_nets.py       # BaseMLP hierarchy: FCNN, ModifiedMLP, RWFLinear
 ├── embeddings/          # Input embeddings (FourierFeatures, ...)
 ├── constrained_net.py   # ConstrainedNet — hard IC/BC (TFC) decorator
@@ -105,10 +105,10 @@ pip install -r requirements.txt
 ### Quickstart
 
 ```python
-from trastuzumab.pinns import ForwardPinn
-from trastuzumab.neural_nets import FCNN
-from trastuzumab.embeddings.fourier_features import FourierFeatures
-from trastuzumab.trainer import Trainer
+from pinnpy.pinns import ForwardPinn
+from pinnpy.neural_nets import FCNN
+from pinnpy.embeddings.fourier_features import FourierFeatures
+from pinnpy.trainer import Trainer
 import torch
 
 net = FCNN(
