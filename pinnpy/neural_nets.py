@@ -13,7 +13,7 @@ feedforward architectures that consume it:
 
 Both concrete backbones are drop-in composable: a BaseMLP subclass takes
 an optional `input_transformation` (e.g. a FourierFeatures instance, see
-trastuzumab.embeddings) applied once, upstream of the backbone's own
+pinnpy.embeddings) applied once, upstream of the backbone's own
 layers, and an optional `use_rwf` flag that swaps every internal
 nn.Linear for an RWFLinear via the shared `_make_layer` factory.
 

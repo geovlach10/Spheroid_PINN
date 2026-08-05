@@ -1,12 +1,12 @@
 import torch
-from trastuzumab.neural_nets import FCNN
-from trastuzumab.constrained_net import ConstrainedNet
-from trastuzumab.residuals import phi
+from pinnpy.neural_nets import FCNN
+from pinnpy.constrained_net import ConstrainedNet
+from pinnpy.residuals import phi
 
 BETA, CSOL, EPS = 2.3, 1.0, 0.01
 
 def _cnet(enforce=('ic','neumann','robin'), seed=1):
-    inner_net = FCNN(n_layers=4, n_neurons=16, seed=seed)
+    inner_net = FCNN(in_dim=2, out_dim=3, n_layers=4, n_neurons=16, seed=seed)
     return ConstrainedNet(inner_net=inner_net, beta=BETA, c_sol_star=CSOL, eps=EPS, enforce=enforce)   
 
 def test_ic_zero_all_channels_untrained():
@@ -39,7 +39,7 @@ def test_checkpoint_schema_unchanged():
     net = _cnet(seed=3)
     sd = net.state_dict()
     assert all(not k.startswith('inner.') for k in sd), "state_dict keys carry a submodule prefix -> delegation missing"
-    new_fcnn = FCNN(n_layers=1, n_neurons=64, initialization=False, seed=3)
+    new_fcnn = FCNN(in_dim=2, out_dim=3, n_layers=1, n_neurons=64, initialization='xavier_normal', seed=3)
     new_fcnn.load_state_dict(sd)
 
 

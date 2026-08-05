@@ -10,7 +10,7 @@ import torch
 
 from . import residuals
 from .datasets import DatasetSampler
-from .neural_nets import FCNN
+from .neural_nets import BaseMLP, FCNN
 from .constrained_net import ConstrainedNet
 from . import constants as _CST
 from .causal import causal_weighted_residual
@@ -23,7 +23,7 @@ class BasePinn(ABC):
 
     BETA = _CST.P_STAR / _CST.D_STAR
 
-    def __init__(self, n_col: int, n_initial: int, n_center: int, n_surface: int, initial_fn: Callable, net: FCNN | ConstrainedNet | None = None, layers: int = 4, neurons: int = 16, l_bounds: tuple[float, float] = (0, 0), u_bounds: tuple[float, float] = (1.0, 1.0), device: str = 'cpu', seed: int = 42, dtype: torch.dtype = torch.float32, hard_conditions: tuple[str, ...] = ('ic', 'neumann', 'robin'), causal: bool = False, n_chunks: int = 24, causal_eps: float = 1.0):
+    def __init__(self, n_col: int, n_initial: int, n_center: int, n_surface: int, initial_fn: Callable, net: BaseMLP | ConstrainedNet | None = None, layers: int = 4, neurons: int = 16, l_bounds: tuple[float, float] = (0, 0), u_bounds: tuple[float, float] = (1.0, 1.0), device: str = 'cpu', seed: int = 42, dtype: torch.dtype = torch.float32, hard_conditions: tuple[str, ...] = ('ic', 'neumann', 'robin'), causal: bool = False, n_chunks: int = 24, causal_eps: float = 1.0):
         
         self.seed = seed
         self.device = device
@@ -45,7 +45,7 @@ class BasePinn(ABC):
         self.initial_fn = initial_fn
         self.hard_conditions = hard_conditions
         # ---
-        self.net = net if net is not None else FCNN(n_layers=layers, n_neurons=neurons, initialization='xavier_normal', seed=self.seed)
+        self.net = net if net is not None else FCNN(in_dim=2, out_dim=3, n_layers=layers, n_neurons=neurons, initialization='xavier_normal', seed=self.seed)
         self.net.to(self.device)
 
         # Dataset atttributes
@@ -154,7 +154,7 @@ class BasePinn(ABC):
         checkpoint: dict[str, Any] = torch.load(path, map_location=device)
         arch = checkpoint['arch']
     
-        net = FCNN(n_layers=arch['n_layers'], n_neurons=arch['n_neurons'], initialization='xavier_normal', seed=arch['seed']).to(device=device)
+        net = FCNN(2, 3, n_layers=arch['n_layers'], n_neurons=arch['n_neurons'], initialization='xavier_normal', seed=arch['seed']).to(device=device)
         net.load_state_dict(checkpoint['state_dict'])
         net.eval()
 
