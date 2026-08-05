@@ -14,8 +14,9 @@ most.
 
 from __future__ import annotations
 import torch
+from ..trastuzumab import residuals
 from .datasets import Dataset
-from . import pinns, residuals
+from . import pinns
 
 
 def _score(net, canditates: Dataset, L:float) -> torch.Tensor:

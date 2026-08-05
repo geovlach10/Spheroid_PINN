@@ -9,4 +9,4 @@ requires-python = ">=3.9"
 dependencies = ["torch", "numpy", "scipy", "matplotlib"]
 
 [tool.setuptools.packages.find]
-include = ["pinnpy*"]
+include = ["pinnpy*", "trastuzumab*"]
