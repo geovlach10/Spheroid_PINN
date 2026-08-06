@@ -4,23 +4,23 @@ Defines the weight-factorization building block and the concrete
 feedforward architectures that consume it:
 
     RWFLinear         -- weight-factorized nn.Linear replacement (eq. 4.4-4.5)
-    BaseMLP           -- abstract backbone: owns everything shared between
+    MLP           -- abstract backbone: owns everything shared between
                          concrete architectures (construction bookkeeping,
                          layer factory, weight init, transformation hooks,
                          hard-IC output convention)
     FCNN              -- standard feedforward backbone
     ModifiedMLP       -- gated-encoder backbone (eq. 6.7-6.11)
 
-Both concrete backbones are drop-in composable: a BaseMLP subclass takes
+Both concrete backbones are drop-in composable: a MLP subclass takes
 an optional `input_transformation` (e.g. a FourierFeatures instance, see
 pinnpy.embeddings) applied once, upstream of the backbone's own
 layers, and an optional `use_rwf` flag that swaps every internal
 nn.Linear for an RWFLinear via the shared `_make_layer` factory.
 
-`BaseMLP` is the type the rest of the codebase should depend on --
+`MLP` is the type the rest of the codebase should depend on --
 `BasePinn.net`, `Trainer`, checkpoint (de)serialization -- rather than any
 concrete subclass. Adding a new backbone architecture means subclassing
-BaseMLP and implementing `_build_layers` / `_compute_hidden`; nothing
+MLP and implementing `_build_layers` / `_compute_hidden`; nothing
 elsewhere in the codebase needs to change (open/closed).
 
 Reference: Wang, Sankaran, Wang & Perdikaris (2023), "An Expert's Guide to
@@ -36,13 +36,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class BaseMLP(nn.Module, ABC):
+class MLP(nn.Module, ABC):
 
     """Abstract base class for PINN network backbones (MLP, ModifiedMLP, ...).
 
     This is the type the rest of the codebase (BasePinn, Trainer,
-    ConstrainedNet, checkpointing) should depend on -- e.g. `net: BaseMLP`
-    -- rather than any concrete subclass. `isinstance(net, BaseMLP)` works
+    ConstrainedNet, checkpointing) should depend on -- e.g. `net: MLP`
+    -- rather than any concrete subclass. `isinstance(net, MLP)` works
     directly, since this is real inheritance.
 
     Owns every part of a PINN backbone that doesn't vary between concrete
@@ -173,7 +173,7 @@ class BaseMLP(nn.Module, ABC):
 
     def forward(self, r: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
 
-        """Full forward pass, identical across all BaseMLP subclasses.
+        """Full forward pass, identical across all MLP subclasses.
 
         Args:
             r: (N, 1) radial coordinate.
@@ -220,7 +220,7 @@ class BaseMLP(nn.Module, ABC):
             print('weight have not been initialized.')
 
 
-class FCNN(BaseMLP):
+class FCNN(MLP):
 
     """Standard feedforward neural nettwork.
 
@@ -244,7 +244,7 @@ class FCNN(BaseMLP):
             x = self.activation_fn(layer(x))
         return self.layers[-1](x)     
 
-class ModifiedMLP(BaseMLP):
+class ModifiedMLP(MLP):
 
     """Modified MLP w/ gated encoder fusion, per Wang, Sankaran, Wang &
     Perdikaris (2023), Sec. 6.4, eqs. (6.7)-(6.11).

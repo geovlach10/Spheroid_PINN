@@ -10,7 +10,7 @@ import torch
 
 from trastuzumab import residuals
 from .datasets import DatasetSampler
-from .neural_nets import BaseMLP, FCNN
+from .neural_nets import MLP, FCNN
 from .constrained_net import ConstrainedNet
 from trastuzumab import constants as _CST
 from .causal import causal_weighted_residual
@@ -23,7 +23,7 @@ class BasePinn(ABC):
 
     BETA = _CST.P_STAR / _CST.D_STAR
 
-    def __init__(self, n_col: int, n_initial: int, n_center: int, n_surface: int, initial_fn: Callable, net: BaseMLP | ConstrainedNet | None = None, layers: int = 4, neurons: int = 16, l_bounds: tuple[float, float] = (0, 0), u_bounds: tuple[float, float] = (1.0, 1.0), device: str = 'cpu', seed: int = 42, dtype: torch.dtype = torch.float32, hard_conditions: tuple[str, ...] = ('ic', 'neumann', 'robin'), causal: bool = False, n_chunks: int = 24, causal_eps: float = 1.0):
+    def __init__(self, n_col: int, n_initial: int, n_center: int, n_surface: int, initial_fn: Callable, net: MLP | ConstrainedNet | None = None, layers: int = 4, neurons: int = 16, l_bounds: tuple[float, float] = (0, 0), u_bounds: tuple[float, float] = (1.0, 1.0), device: str = 'cpu', seed: int = 42, dtype: torch.dtype = torch.float32, hard_conditions: tuple[str, ...] = ('ic', 'neumann', 'robin'), causal: bool = False, n_chunks: int = 24, causal_eps: float = 1.0):
         
         self.seed = seed
         self.device = device
