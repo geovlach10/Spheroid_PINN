@@ -20,9 +20,19 @@ something theta is optimized against directly.
 """
 
 from __future__ import annotations
+from typing import NamedTuple
 import torch
 
-def causal_weighted_residual(residual_terms: dict[str, torch.Tensor], weights: dict[str, float], t: torch.Tensor, t_bounds: tuple[float, float], n_chunks: int, eps: float, verbose: bool = False) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+class CausalWeightingResult(NamedTuple):
+    """Result of causal_weighted_residual. Supports both positional
+    unpacking (`loss, losses, weights = causal_weighted_residual(...)`)
+    and attribute access (`result.total_loss`, etc) -- pick whichever
+    reads better at the call site."""
+    total_loss: torch.Tensor
+    chunk_losses: torch.Tensor
+    chunk_weights: torch.Tensor
+
+def causal_weighted_residual(residual_terms: dict[str, torch.Tensor], weights: dict[str, float], t: torch.Tensor, t_bounds: tuple[float, float], n_chunks: int, eps: float, verbose: bool = False) -> CausalWeightingResult:
 
     """Bins already-computed PDE residuals by time and combines them with
     causal weights.
@@ -37,7 +47,7 @@ def causal_weighted_residual(residual_terms: dict[str, torch.Tensor], weights: d
             each an (N, 1) tensor of raw (unsquared) residuals with grad
             history intact -- same tensors residuals.pde() returns.
         weights: static per-term weights, e.g. {'pde0': w0, 'pde1': w1, 'pde2': w2},
-            matching the w['pde0'] etc. used elsewhere in mse_loss so the
+            matching the w['pde0'] etc. used elsewhere in loss_fn so the
             causal and non-causal paths stay on equal footing.
         t: (N, 1) time coordinate for each collocation point (same ordering
             as the residual tensors).
@@ -50,12 +60,13 @@ def causal_weighted_residual(residual_terms: dict[str, torch.Tensor], weights: d
             minimized to a small enough value -- see Sec 5.1).
  
     Returns:
-        total_loss: scalar, ready to be added into the overall loss.
-        chunk_losses: (n_chunks,) tensor, detached raw per-chunk loss --
-            for plotting L_r(t, theta) (paper Fig 3, top-right / Fig 19 left).
-        chunk_weights: (n_chunks,) tensor, detached w_i's -- for the
-            min_t w(t) convergence diagnostic (paper Fig 19, right panel);
-            training is behaving well once min(chunk_weights) -> 1.
+        CausalWeightingResult(total_loss, chunk_losses, chunk_weights):
+            total_loss: scalar, ready to be added into the overall loss.
+            chunk_losses: (n_chunks,) tensor, detached raw per-chunk loss
+                -- for plotting L_r(t, theta) (paper Fig 3, top-right / Fig 19 left).
+            chunk_weights: (n_chunks,) tensor, detached w_i's -- for the
+                min_t w(t) convergence diagnostic (paper Fig 19, right panel);
+                training is behaving well once min(chunk_weights) -> 1.
     """
 
     t_lo, t_hi = t_bounds
@@ -86,4 +97,4 @@ def causal_weighted_residual(residual_terms: dict[str, torch.Tensor], weights: d
 
     total_loss = (chunk_weights * chunk_losses).mean()
 
-    return total_loss, chunk_losses.detach(), chunk_weights
+    return CausalWeightingResult(total_loss = total_loss, chunk_losses = chunk_losses.detach(), chunk_weights = chunk_weights)
