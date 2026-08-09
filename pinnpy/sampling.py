@@ -14,7 +14,7 @@ most.
 
 from __future__ import annotations
 import torch
-from ..trastuzumab import residuals
+from trastuzumab import residuals
 from .datasets import Dataset
 from . import pinns
 
