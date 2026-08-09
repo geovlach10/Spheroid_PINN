@@ -4,21 +4,21 @@ Defines the weight-factorization building block and the concrete
 feedforward architectures that consume it:
 
     RWFLinear         -- weight-factorized nn.Linear replacement (eq. 4.4-4.5)
-    MLP           -- abstract backbone: owns everything shared between
+    MLP               -- abstract backbone: owns everything shared between
                          concrete architectures (construction bookkeeping,
                          layer factory, weight init, transformation hooks,
                          hard-IC output convention)
     FCNN              -- standard feedforward backbone
     ModifiedMLP       -- gated-encoder backbone (eq. 6.7-6.11)
 
-Both concrete backbones are drop-in composable: a MLP subclass takes
+Both concrete backbones are drop-in composable: an MLP subclass takes
 an optional `input_transformation` (e.g. a FourierFeatures instance, see
 pinnpy.embeddings) applied once, upstream of the backbone's own
 layers, and an optional `use_rwf` flag that swaps every internal
 nn.Linear for an RWFLinear via the shared `_make_layer` factory.
 
 `MLP` is the type the rest of the codebase should depend on --
-`BasePinn.net`, `Trainer`, checkpoint (de)serialization -- rather than any
+`Pinn.net`, `Trainer`, checkpoint (de)serialization -- rather than any
 concrete subclass. Adding a new backbone architecture means subclassing
 MLP and implementing `_build_layers` / `_compute_hidden`; nothing
 elsewhere in the codebase needs to change (open/closed).
@@ -38,7 +38,7 @@ import torch.nn.functional as F
 
 class MLP(nn.Module, ABC):
 
-    """Abstract base class for PINN network backbones (MLP, ModifiedMLP, ...).
+    """Abstract base class for PINN network backbones (FCNN, ModifiedMLP, ...).
 
     This is the type the rest of the codebase (BasePinn, Trainer,
     ConstrainedNet, checkpointing) should depend on -- e.g. `net: MLP`
@@ -74,7 +74,7 @@ class MLP(nn.Module, ABC):
         """
         Args:
             n_layers: total layer count as counted by the concrete subclass
-                (for MLP: 1 first-hidden + (n_layers-2) mid-hidden + 1
+                (for FCNN: 1 first-hidden + (n_layers-2) mid-hidden + 1
                 output; ModifiedMLP counts its main stack the same way,
                 excluding the two encoders and the output layer).
             n_neurons: hidden width, uniform across all hidden layers.
@@ -257,10 +257,10 @@ class ModifiedMLP(MLP):
         g^(l) = sigma(f^(l)) * U + (1 - sigma(f^(l))) * V            (6.9)
         f_theta(x) = W^(L+1) g^(L) + b^(L+1)                         (6.10)
 
-    In practice, demands more compute than MLP but tends to lower PDE
+    In practice, demands more compute than FCNN but tends to lower PDE
     residuals / yield more accurate results (paper, Sec 6.4).
 
-    n_layers total: counted the same way as MLP for the main stack (1
+    n_layers total: counted the same way as FCNN for the main stack (1
     first-hidden + (n_layers-2) mid-hidden), EXCLUDING encoder_U/encoder_V
     and the final output_layer, which are separate, always-present modules.
     """
