@@ -96,7 +96,7 @@ def initial_residual(net: MLP, dataset: Dataset, ic_func: Callable[[torch.Tensor
 
 def center_neumann_residual(net: MLP, dataset: Dataset, target: float = 0.0, **kwargs) -> torch.Tensor:
     """Neumann BC at r=0: dc0/dr = target. Use as
-    `BoundaryCondition(name='center', ..., residual_fn=center_neumann, kwargs={'target': 0.0})`."""
+    `BoundaryCondition(name='center', ..., residual_fn=center_neumann_residual, kwargs={'target': 0.0})`."""
     r = dataset.data.clone()[:,0:1].requires_grad_(True)
     t = dataset.data.clone()[:,1:2].requires_grad_(True)
     
@@ -107,7 +107,7 @@ def center_neumann_residual(net: MLP, dataset: Dataset, target: float = 0.0, **k
 
 def surface_robin_residual(net: MLP, dataset: Dataset, **kwargs) -> torch.Tensor:
     """Robin BC at r=1: surface flux balances bath mass transfer. Use
-    as `BoundaryCondition(name='surface', ..., residual_fn=surface_robin)`."""
+    as `BoundaryCondition(name='surface', ..., residual_fn=surface_robin_residual)`."""
     r = dataset.data.clone()[:,0:1].requires_grad_(True)
     t = dataset.data.clone()[:,1:2].requires_grad_(True)
 

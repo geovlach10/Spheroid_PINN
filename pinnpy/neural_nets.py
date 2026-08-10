@@ -48,8 +48,9 @@ class MLP(nn.Module, ABC):
     Owns every part of a PINN backbone that doesn't vary between concrete
     subclasses: construction bookkeeping, the RWF-vs-plain nn.Linear layer
     factory, weight initialization, the input/output transformation hooks,
-    and the hard-IC output convention (architecturally constrained:
-    C(r, 0) = 0 for every t = 0, via t * u).
+    An optional hard_constraint_fn hook is also available (see
+    __init__'s docstring) for problems that want to architecturally
+    enforce a constraint such as an IC -- opt-in, not applied by default.
 
     Attributes (set in __init__, all subclasses inherit these as-is):
         seed: RNG seed used for both torch.manual_seed and reproducibility
@@ -93,7 +94,7 @@ class MLP(nn.Module, ABC):
                 that's used to size the first layer; otherwise input_dim
                 (2) is assumed.
             output_transformation: optional callable applied to the raw
-                network output before the hard-IC t-multiply.
+                network output, before hard_constraint_fn (if any).
             use_rwf, rwf_mu, rwf_sigma: see RWFLinear. When use_rwf=True,
                 every layer built via _make_layer is an RWFLinear instead
                 of an nn.Linear.
@@ -181,8 +182,7 @@ class MLP(nn.Module, ABC):
                 embedded) coordinate batch.
 
         Returns:
-            (N, output_dim) raw prediction, before output_transformation
-            and before the hard-IC t-multiply.
+            (N, output_dim) raw prediction, before output_transformation and hard_constraint_fn.
         """
         ...
 
@@ -195,10 +195,11 @@ class MLP(nn.Module, ABC):
             r: (N, 1) radial coordinate.
             t: (N, 1) time coordinate.
 
-        Returns:
-            (N, output_dim) prediction -- (c0, c1, c2) columns for this
-            project -- with C(r, 0) = 0 enforced architecturally for every
-            t = 0 (final t * u multiply).
+         Returns:
+            (N, output_dim) prediction. If `hard_constraint_fn` was
+            supplied at construction, it's applied last (see
+            __init__'s docstring); otherwise this is the raw
+            (possibly output_transformation-processed) network output.
         """
 
         x = torch.cat([r, t], dim=1)
@@ -214,7 +215,7 @@ class MLP(nn.Module, ABC):
         if self.output_transformation is not None:
             u = self.output_transformation(u)
 
-        # 4. any hard-constaint function.
+        # 4. any hard-constraint function.
         if self.hard_constraint_fn is not None:
             u = self.hard_constraint_fn(r, t, u)
         return u
