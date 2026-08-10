@@ -69,8 +69,13 @@ class MLP(nn.Module, ABC):
 
     _INITS = {'xavier_normal': nn.init.xavier_normal_, 'xavier_uniform': nn.init.xavier_uniform_}
         
-    def __init__(self, in_dim: int, out_dim: int, n_layers: int, n_neurons: int, activation_instance: nn.Module = nn.Tanh(), initialization: str = '', input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None,
-                    use_rwf: bool = False, rwf_mu: float = 1.0, rwf_sigma: float = 0.1, seed: int = 42):
+    def __init__(self, in_dim: int, out_dim: int, 
+                 n_layers: int, n_neurons: int, 
+                 activation_instance: nn.Module = nn.Tanh(), initialization: str = '', 
+                 input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]] = None, 
+                 output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+                 hard_constraint_fn: Optional[Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]] = None,
+                 use_rwf: bool = False, rwf_mu: float = 1.0, rwf_sigma: float = 0.1, seed: int = 42):
         """
         Args:
             n_layers: total layer count as counted by the concrete subclass
@@ -94,6 +99,16 @@ class MLP(nn.Module, ABC):
                 of an nn.Linear.
             seed: seeds torch.manual_seed for reproducible weight init,
                 and is stored for checkpoint bookkeeping.
+            hard_constraint_fn: optional callable, called as
+                `hard_constraint_fn(r, t, u)` after output_transformation,
+                right before returning. Use this to architecturally enforce
+                a hard constraint (e.g. an initial condition) the way
+                `t * u` used to, unconditionally, for every backbone --
+                that behavior is now opt-in, since not every physics
+                problem has a zero IC at t=0, and "multiply by the second
+                input dim" isn't a universal IC shape. See
+                `pinnpy.hard_constraints` for ready-made examples (e.g.
+                `zero_at_t0`). Default `None`: `u` is returned unchanged.
         """
         super().__init__()
 
@@ -117,6 +132,7 @@ class MLP(nn.Module, ABC):
         self.initialization = initialization
         self.input_transformation = input_transformation
         self.output_transformation = output_transformation
+        self.hard_constraint_fn = hard_constraint_fn
         self.first_layer_in = getattr(input_transformation, 'output_dim', self.input_dim)
 
         self._build_layers(n_layers, n_neurons)
@@ -198,7 +214,10 @@ class MLP(nn.Module, ABC):
         if self.output_transformation is not None:
             u = self.output_transformation(u)
 
-        return t * u        # architecturally constrained to produce C(r, 0) = 0 for every t = 0.
+        # 4. any hard-constaint function.
+        if self.hard_constraint_fn is not None:
+            u = self.hard_constraint_fn(r, t, u)
+        return u
 
 
     def _initialize_weights(self, initialization: str | None) -> None:
