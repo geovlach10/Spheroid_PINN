@@ -581,14 +581,15 @@ class PINN(ABC):
         not on PINN (abstract — `__new__` would refuse)."""
 
         checkpoint: dict[str, Any] = torch.load(path, map_location=device)
-        arch = checkpoint['arch']
-    
-        net = FCNN(2, 3, n_layers=arch['n_layers'], n_neurons=arch['n_neurons'], initialization='xavier_normal', seed=arch['seed']).to(device=device)
+        arch: dict[str, Any] = checkpoint['arch']
+        c_net_kwargs = checkpoint.get('constrained_net_kwargs', {})
+
+        net = FCNN(in_dim=2, out_dim=3, n_layers=arch['n_layers'], n_neurons=arch['n_neurons'], initialization='xavier_normal', seed=arch['seed']).to(device=device)
         net.load_state_dict(checkpoint['state_dict'])
         net.eval()
 
         new_pinn = cls.__new__(cls)        # bypasses the __init__() constructor.
-        new_pinn.net = ConstrainedNet(inner_net=net, beta=cls.BETA, c_sol_star=_CST.C_SOL_STAR, eps=0.01, enforce=('ic', 'neumann', 'robin'))
+        new_pinn.net = ConstrainedNet(inner_net=net, **c_net_kwargs)
         new_pinn.device = device
         new_pinn.dtype = dtype
         new_pinn.seed = arch['seed']
