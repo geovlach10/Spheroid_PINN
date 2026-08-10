@@ -525,7 +525,7 @@ class PINN(ABC):
         ...
 
 
-    def resample_datasets(self, n_collocation: int, n_initial: int, n_left: int, n_right: int, lower_bounds: tuple[float, float] = (0.0, 0.0), upper_bounds: tuple[float, float] = (1.0, 1.0) ) -> 'PINN':
+    def resample_datasets(self, n_collocation: int, lower_bounds: tuple[float, float] = (0.0, 0.0), upper_bounds: tuple[float, float] = (1.0, 1.0) ) -> 'PINN':
         """Redraw the interior collocation dataset in place (the RAR-G
         hook -- see `sampling.py`) and update the domain bounds. Returns
         self, so this chains: `pinn.resample_datasets(...).loss_fn(...)`.
