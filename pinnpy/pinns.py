@@ -420,7 +420,6 @@ class PINN(ABC):
 
     
     def loss_fn(self, w: dict[str, float], **pde_kwargs) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-
         """Compute the total weighted MSE loss across the PDE residual and
         every injected initial/boundary condition.
  
@@ -633,7 +632,7 @@ class ForwardPinn(PINN):
     via your `PDE`/`InitialCondition`/`BoundaryCondition` objects. No
     data-fitting term -- `_extra_loss_term` always returns `{}`."""
 
-    def _extra_loss_term(self, L: float) -> dict[str, torch.Tensor]:
+    def _extra_loss_term(self, **pde_kwargs) -> dict[str, torch.Tensor]:
         return {}
     
 
@@ -648,7 +647,7 @@ class InversePinn(PINN):
     your observations) when an inverse problem is actually specified.
     """
 
-    def _extra_loss_term(self, L: float) -> dict[str, torch.Tensor]:
+    def _extra_loss_term(self, **pde_kwargs) -> dict[str, torch.Tensor]:
         raise NotImplementedError(
             'InversePinn is a documented seam; build it when an inverse '
             'problem with observational data is specified.')
