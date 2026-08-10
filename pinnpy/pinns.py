@@ -231,7 +231,7 @@ class InitialCondition:
     kwargs: dict = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(frozen=True)
 class BoundaryCondition:
     """One boundary condition -- a constraint on the solution at a fixed
     spatial location (or region), evaluated across the time domain.
