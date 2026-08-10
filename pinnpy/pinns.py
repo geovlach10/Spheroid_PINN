@@ -358,7 +358,7 @@ class PINN(ABC):
                  initial_conditions: list[InitialCondition] | None = None, boundary_conditions: list[BoundaryCondition] | None = None,
                  l_bounds: tuple[float, float] = (0, 0), u_bounds: tuple[float, float] = (1.0, 1.0), 
                  device: str = 'cpu', seed: int = 42, dtype: torch.dtype = torch.float32, 
-                 hard_conditions: tuple[str, ...] = ('', '', ''), constrained_net_kwargs: dict[str, Any] | None = None,
+                 hard_conditions: tuple[str, ...] = (), constrained_net_kwargs: dict[str, Any] | None = None,
                  causal: bool = False, n_chunks: int = 24, causal_eps: float = 1.0):
         
         self.seed = seed
@@ -593,6 +593,7 @@ class PINN(ABC):
         new_pinn.device = device
         new_pinn.dtype = dtype
         new_pinn.seed = arch['seed']
+        new_pinn.constrained_net_kwargs = c_net_kwargs
         new_pinn.meta = checkpoint.get('meta', {}) 
         return new_pinn
     
