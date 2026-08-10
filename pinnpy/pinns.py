@@ -466,7 +466,7 @@ class PINN(ABC):
             if ic.name not in self.hard_conditions:
                 ic_res = ic.residual_fn(net=self.net, dataset=ic.dataset, ic_func=ic.ic_func, **ic.kwargs)
             else:
-                ic_res = {k: torch.Tensor(0.0) for k in pde_res.keys()}
+                ic_res = {k: torch.tensor(0.0) for k in pde_res.keys()}
             ic_res_by_name[ic.name] = ic_res
             raw_loss_terms.update({f'{ic.name}_{k}': res.pow(2).mean() for k, res in ic_res.items()})
 
@@ -491,7 +491,7 @@ class PINN(ABC):
             )
             self.meta['chunk_losses'] = chunk_losses
             self.meta['chunk_weights'] = chunk_weights
-            raw_loss_terms['pde'] = sum(raw_loss_terms[f'pde_{key}'] for key in pde_res.keys())
+            raw_loss_terms['pde'] = torch.stack([raw_loss_terms[f'pde_{key}'] for key in pde_res.keys()]).sum()
             individual_weighted_loss_terms = {'pde': pde_loss}
         else:
             individual_weighted_loss_terms = {f'pde_{key}': w[f'pde_{key}'] * residual.pow(2).mean() for key, residual in pde_res.items()}
