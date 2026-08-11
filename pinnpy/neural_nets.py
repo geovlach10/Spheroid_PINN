@@ -4,23 +4,23 @@ Defines the weight-factorization building block and the concrete
 feedforward architectures that consume it:
 
     RWFLinear         -- weight-factorized nn.Linear replacement (eq. 4.4-4.5)
-    BaseMLP           -- abstract backbone: owns everything shared between
+    MLP               -- abstract backbone: owns everything shared between
                          concrete architectures (construction bookkeeping,
                          layer factory, weight init, transformation hooks,
                          hard-IC output convention)
     FCNN              -- standard feedforward backbone
     ModifiedMLP       -- gated-encoder backbone (eq. 6.7-6.11)
 
-Both concrete backbones are drop-in composable: a BaseMLP subclass takes
+Both concrete backbones are drop-in composable: an MLP subclass takes
 an optional `input_transformation` (e.g. a FourierFeatures instance, see
 pinnpy.embeddings) applied once, upstream of the backbone's own
 layers, and an optional `use_rwf` flag that swaps every internal
 nn.Linear for an RWFLinear via the shared `_make_layer` factory.
 
-`BaseMLP` is the type the rest of the codebase should depend on --
-`BasePinn.net`, `Trainer`, checkpoint (de)serialization -- rather than any
+`MLP` is the type the rest of the codebase should depend on --
+`Pinn.net`, `Trainer`, checkpoint (de)serialization -- rather than any
 concrete subclass. Adding a new backbone architecture means subclassing
-BaseMLP and implementing `_build_layers` / `_compute_hidden`; nothing
+MLP and implementing `_build_layers` / `_compute_hidden`; nothing
 elsewhere in the codebase needs to change (open/closed).
 
 Reference: Wang, Sankaran, Wang & Perdikaris (2023), "An Expert's Guide to
@@ -36,20 +36,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class BaseMLP(nn.Module, ABC):
+class MLP(nn.Module, ABC):
 
-    """Abstract base class for PINN network backbones (MLP, ModifiedMLP, ...).
+    """Abstract base class for PINN network backbones (FCNN, ModifiedMLP, ...).
 
     This is the type the rest of the codebase (BasePinn, Trainer,
-    ConstrainedNet, checkpointing) should depend on -- e.g. `net: BaseMLP`
-    -- rather than any concrete subclass. `isinstance(net, BaseMLP)` works
+    ConstrainedNet, checkpointing) should depend on -- e.g. `net: MLP`
+    -- rather than any concrete subclass. `isinstance(net, MLP)` works
     directly, since this is real inheritance.
 
     Owns every part of a PINN backbone that doesn't vary between concrete
     subclasses: construction bookkeeping, the RWF-vs-plain nn.Linear layer
     factory, weight initialization, the input/output transformation hooks,
-    and the hard-IC output convention (architecturally constrained:
-    C(r, 0) = 0 for every t = 0, via t * u).
+    An optional hard_constraint_fn hook is also available (see
+    __init__'s docstring) for problems that want to architecturally
+    enforce a constraint such as an IC -- opt-in, not applied by default.
 
     Attributes (set in __init__, all subclasses inherit these as-is):
         seed: RNG seed used for both torch.manual_seed and reproducibility
@@ -69,12 +70,17 @@ class BaseMLP(nn.Module, ABC):
 
     _INITS = {'xavier_normal': nn.init.xavier_normal_, 'xavier_uniform': nn.init.xavier_uniform_}
         
-    def __init__(self, in_dim: int, out_dim: int, n_layers: int, n_neurons: int, activation_instance: nn.Module = nn.Tanh(), initialization: str = '', input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None, output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]]=None,
-                    use_rwf: bool = False, rwf_mu: float = 1.0, rwf_sigma: float = 0.1, seed: int = 42):
+    def __init__(self, in_dim: int, out_dim: int, 
+                 n_layers: int, n_neurons: int, 
+                 activation_instance: nn.Module = nn.Tanh(), initialization: str = '', 
+                 input_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]] = None, 
+                 output_transformation: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+                 hard_constraint_fn: Optional[Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]] = None,
+                 use_rwf: bool = False, rwf_mu: float = 1.0, rwf_sigma: float = 0.1, seed: int = 42):
         """
         Args:
             n_layers: total layer count as counted by the concrete subclass
-                (for MLP: 1 first-hidden + (n_layers-2) mid-hidden + 1
+                (for FCNN: 1 first-hidden + (n_layers-2) mid-hidden + 1
                 output; ModifiedMLP counts its main stack the same way,
                 excluding the two encoders and the output layer).
             n_neurons: hidden width, uniform across all hidden layers.
@@ -88,12 +94,22 @@ class BaseMLP(nn.Module, ABC):
                 that's used to size the first layer; otherwise input_dim
                 (2) is assumed.
             output_transformation: optional callable applied to the raw
-                network output before the hard-IC t-multiply.
+                network output, before hard_constraint_fn (if any).
             use_rwf, rwf_mu, rwf_sigma: see RWFLinear. When use_rwf=True,
                 every layer built via _make_layer is an RWFLinear instead
                 of an nn.Linear.
             seed: seeds torch.manual_seed for reproducible weight init,
                 and is stored for checkpoint bookkeeping.
+            hard_constraint_fn: optional callable, called as
+                `hard_constraint_fn(r, t, u)` after output_transformation,
+                right before returning. Use this to architecturally enforce
+                a hard constraint (e.g. an initial condition) the way
+                `t * u` used to, unconditionally, for every backbone --
+                that behavior is now opt-in, since not every physics
+                problem has a zero IC at t=0, and "multiply by the second
+                input dim" isn't a universal IC shape. See
+                `pinnpy.hard_constraints` for ready-made examples (e.g.
+                `zero_at_t0`). Default `None`: `u` is returned unchanged.
         """
         super().__init__()
 
@@ -117,6 +133,7 @@ class BaseMLP(nn.Module, ABC):
         self.initialization = initialization
         self.input_transformation = input_transformation
         self.output_transformation = output_transformation
+        self.hard_constraint_fn = hard_constraint_fn
         self.first_layer_in = getattr(input_transformation, 'output_dim', self.input_dim)
 
         self._build_layers(n_layers, n_neurons)
@@ -165,24 +182,24 @@ class BaseMLP(nn.Module, ABC):
                 embedded) coordinate batch.
 
         Returns:
-            (N, output_dim) raw prediction, before output_transformation
-            and before the hard-IC t-multiply.
+            (N, output_dim) raw prediction, before output_transformation and hard_constraint_fn.
         """
         ...
 
 
     def forward(self, r: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
 
-        """Full forward pass, identical across all BaseMLP subclasses.
+        """Full forward pass, identical across all MLP subclasses.
 
         Args:
             r: (N, 1) radial coordinate.
             t: (N, 1) time coordinate.
 
-        Returns:
-            (N, output_dim) prediction -- (c0, c1, c2) columns for this
-            project -- with C(r, 0) = 0 enforced architecturally for every
-            t = 0 (final t * u multiply).
+         Returns:
+            (N, output_dim) prediction. If `hard_constraint_fn` was
+            supplied at construction, it's applied last (see
+            __init__'s docstring); otherwise this is the raw
+            (possibly output_transformation-processed) network output.
         """
 
         x = torch.cat([r, t], dim=1)
@@ -198,7 +215,10 @@ class BaseMLP(nn.Module, ABC):
         if self.output_transformation is not None:
             u = self.output_transformation(u)
 
-        return t * u        # architecturally constrained to produce C(r, 0) = 0 for every t = 0.
+        # 4. any hard-constraint function.
+        if self.hard_constraint_fn is not None:
+            u = self.hard_constraint_fn(r, t, u)
+        return u
 
 
     def _initialize_weights(self, initialization: str | None) -> None:
@@ -220,7 +240,7 @@ class BaseMLP(nn.Module, ABC):
             print('weight have not been initialized.')
 
 
-class FCNN(BaseMLP):
+class FCNN(MLP):
 
     """Standard feedforward neural nettwork.
 
@@ -244,7 +264,7 @@ class FCNN(BaseMLP):
             x = self.activation_fn(layer(x))
         return self.layers[-1](x)     
 
-class ModifiedMLP(BaseMLP):
+class ModifiedMLP(MLP):
 
     """Modified MLP w/ gated encoder fusion, per Wang, Sankaran, Wang &
     Perdikaris (2023), Sec. 6.4, eqs. (6.7)-(6.11).
@@ -257,10 +277,10 @@ class ModifiedMLP(BaseMLP):
         g^(l) = sigma(f^(l)) * U + (1 - sigma(f^(l))) * V            (6.9)
         f_theta(x) = W^(L+1) g^(L) + b^(L+1)                         (6.10)
 
-    In practice, demands more compute than MLP but tends to lower PDE
+    In practice, demands more compute than FCNN but tends to lower PDE
     residuals / yield more accurate results (paper, Sec 6.4).
 
-    n_layers total: counted the same way as MLP for the main stack (1
+    n_layers total: counted the same way as FCNN for the main stack (1
     first-hidden + (n_layers-2) mid-hidden), EXCLUDING encoder_U/encoder_V
     and the final output_layer, which are separate, always-present modules.
     """
