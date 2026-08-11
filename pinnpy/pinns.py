@@ -55,7 +55,7 @@ import matplotlib.pyplot as plt
 from .datasets import DatasetSampler, Dataset
 from .neural_nets import MLP, FCNN
 from .constrained_net import ConstrainedNet
-from .causal import causal_weighted_residual
+from .training.causal import causal_weighted_residual
 
 class PDEResidualFn(Protocol):
     """Call signature every `PDE.residual_fn` callable must satisfy.

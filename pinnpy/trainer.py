@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 import torch
 from .pinns import PINN
-from .weighting import GradNormWeighter
+from .training.weighting import GradNormWeighter
 from datetime import datetime
 
 _MODELS_DIR = Path(__file__).parent.parent / 'models'

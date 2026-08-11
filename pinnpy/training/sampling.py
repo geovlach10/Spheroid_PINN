@@ -15,9 +15,9 @@ number of species."""
 from __future__ import annotations
 import torch
 
-from .datasets import Dataset
-from .pinns import PINN
-from .trainer import Trainer
+from ..datasets import Dataset
+from ..pinns import PINN
+from ..trainer import Trainer
 
 
 def _score(pinn: PINN, canditates: Dataset, **pde_kwargs) -> torch.Tensor:
