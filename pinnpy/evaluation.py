@@ -70,7 +70,7 @@ class Evaluator:
         self.r = torch.tensor(r, dtype=torch.float32).view(-1, 1)
         self.t_grid = t_grid
         self.snapshots = snapshots if snapshots is not None else tuple(np.linspace(0.0, 1.0, 5))
-        self.primary_species = primary_species if self.primary_species is not None else species[0]
+        self.primary_species = primary_species if primary_species is not None else species[0]
 
         for s in self.species:
             assert s in self.fdm, f"species {s!r} missing from fdm dict (got keys: {list(self.fdm)})"
@@ -129,7 +129,8 @@ class Evaluator:
             idx = int(round(ts * (len(self.t_grid) - 1)))
             per_snapshot[ts] = self._rel_l2(
                 pred[self.primary_species][:, idx],
-                self.fdm[self.primary_species][:, idx])
+                self.fdm[self.primary_species][:, idx]
+                )
 
         return {
             'global_l2'      :self._rel_l2(pred_all, true_all),
