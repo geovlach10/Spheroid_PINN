@@ -553,6 +553,32 @@ class PINN(ABC):
         self.upper_bounds = upper_bounds
         print(f'points resampled...\n-new total: {self._DATASET.n_points}\n-upper_bounds: {self.upper_bounds}')
         return self
+
+    def resample_collocation(self, n_points: int | None = None, seed_offset: int = 0) -> 'PINN':
+        """Replaces (not grows) the interior collocation dataset with a
+        fresh random draw of the same size.
+
+        This is the "keep drawing fresh training points each iteration"
+        regularization the paper recommends (Sec 6.2) -- distinct from
+        `resample_datasets` (the RAR-G hook), which GROWS the collocation
+        set in place rather than replacing it. Use this one for periodic
+        full replacement; use `resample_datasets` for adaptive refinement.
+
+        Args:
+            n_points: how many points the new dataset should have.
+                Default: same size as the current dataset (`self.n_col`).
+            seed_offset: forwarded to
+                `DatasetSampler.sample_collocation_points`'s own
+                `seed_offset` -- pass a different value each call (e.g.
+                the current training iteration) so successive resamples
+                actually draw different points instead of silently
+                repeating the same cloud every time.
+        """
+        n = n_points if n_points is not None else self.n_col
+        self.pde.dataset = self.sampler.sample_collocation_points(
+            n_points=n, l_bounds=self.lower_bounds, u_bounds=self.upper_bounds, seed_offset=seed_offset
+        )
+        return self
     
     def to_checkpoint(self) -> dict:
         """Serialize this PINN's network to a checkpoint dict, ready for
