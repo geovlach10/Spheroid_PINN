@@ -71,13 +71,19 @@ class Trainer:
         self.gradnorm_weighter = GradNormWeighter(alpha=gradnorm_alpha, update_every=gradnorm_update_every) if use_gradnorm else None
         self.gradnorm_history: list = []
 
-    def train(self, optimizer: torch.optim.Optimizer, epochs: int, log_every: int = 200, profile_every: int=0, **pde_kwargs) -> 'Trainer':
+    def train(self, optimizer: torch.optim.Optimizer, epochs: int, log_every: int = 200, profile_every: int=0, resample_every: int = 0, **pde_kwargs) -> 'Trainer':
         """Runs `epochs` optimizer steps against `self.pinn.loss_fn`.
 
         Args:
             optimizer: e.g. `torch.optim.Adam(pinn.net.parameters(), ...)`.
             epochs: number of steps to run.
             log_every, profile_every: logging/profiling cadence, in epochs.
+            resample_every: if > 0, replace the collocation dataset with a
+                fresh draw every `resample_every` epochs (via
+                `pinn.resample_collocation`, seeded off `self.current_iter`
+                so each resample differs). Default 0: disabled -- the
+                collocation set stays fixed for the whole run, same as
+                before this option existed.
             **pde_kwargs: forwarded to `pinn.loss_fn(w=self.weights, **pde_kwargs)`
                 every step -- e.g. `L=1.0` for trastuzumab's PDE, or
                 nothing at all for a PDE that doesn't need any.
@@ -87,6 +93,7 @@ class Trainer:
             'epochs': epochs,
             'lr': optimizer.param_groups[0].get('lr'),
             'pde_kwargs': dict(pde_kwargs),
+            'resample_every': resample_every,
             't_end': self.pinn.upper_bounds[1]
         })
 
@@ -97,6 +104,8 @@ class Trainer:
             return loss
         
         for epoch in range(epochs):
+            if resample_every and self.current_iter % resample_every == 0:
+                self.pinn.resample_collocation(seed_offset=self.current_iter)
             optimizer.step(closure)         # type: ignore[arg-type]
             total_loss, individual_loss_terms = self.pinn.loss_fn(w=self.weights, **pde_kwargs)
             self._record(epoch, total_loss, individual_loss_terms)
