@@ -1,9 +1,9 @@
 """Training-point datasets and sampling for PINN training.
- 
+
 Dataset wraps a batch of (r, t) coordinate pairs as a single tensor,
 with named-column accessors and support for concatenation (`+`) and
 visualization (`plotme`).
- 
+
 DatasetSampler is the generic point-sampling utility PINN uses (directly,
 for the interior collocation set) and that IC/BC-building code calls
 (to construct the Dataset objects wrapped in InitialCondition /
@@ -11,25 +11,34 @@ BoundaryCondition -- see pinns.py). It assumes a 1D radially-symmetric
 domain: r spans some [r_min, r_max] and t spans some [t_min, t_max],
 which covers any radial PDE problem (not just trastuzumab specifically),
 but is not a fully general N-dimensional sampler.
- 
-Four sampling patterns are provided:
-    sample_collocation_points -- quasi-random interior points (Latin
-        Hypercube), for evaluating the PDE residual.
-    sample_initial_points      -- points spread across r at t = t_min,
-        for an initial condition.
-    sample_center_points       -- points spread across t at r = r_min
-        (the domain's inner boundary, e.g. r=0 for a sphere/cylinder
-        center), for an inner boundary condition.
-    sample_surface_points      -- points spread across t at r = r_max
-        (the domain's outer boundary), for an outer boundary condition.
- 
+
+Five sampling patterns are provided:
+    sample_collocation_points          -- quasi-random interior points
+        (Latin Hypercube, uniform density), for evaluating the PDE
+        residual.
+    sample_chebyshev_collocation_points -- quasi-random interior points
+        with density clustered near one or both ends of the r and/or
+        t axes, for problems where the PDE residual is concentrated
+        near a specific boundary (e.g. a boundary layer).
+    sample_initial_points               -- points spread across r at
+        t = t_min, for an initial condition.
+    sample_center_points                -- points spread across t at
+        r = r_min (the domain's inner boundary, e.g. r=0 for a
+        sphere/cylinder center), for an inner boundary condition.
+    sample_surface_points               -- points spread across t at
+        r = r_max (the domain's outer boundary), for an outer boundary
+        condition.
+
 Example:
     sampler = DatasetSampler(seed=42)
     collocation = sampler.sample_collocation_points(n_points=10_000)
+    boundary_layer = sampler.sample_chebyshev_collocation_points(n_points=10_000, r_side='high')
     initial     = sampler.sample_initial_points(n_points=200)
     center      = sampler.sample_center_points(n_points=200)
     surface     = sampler.sample_surface_points(n_points=200)
 """
+
+from __future__ import annotations
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -164,6 +173,77 @@ class DatasetSampler:
         dataset = sampler.random(n=n_points)
         dataset = qmc.scale(sample=dataset, l_bounds=l_bounds, u_bounds=u_bounds)
         return Dataset(data=dataset, name='collocation', upper_bounds=u_bounds, n_points=n_points)
+
+    def sample_chebyshev_collocation_points(self, n_points: int, l_bounds=[0.0, 0.0], u_bounds=[1.0, 1.0], 
+                                            r_side: str | None = 'high', t_side: str | None = None, 
+                                            concentration: float = 2.0, seed_offset=0):
+        
+        """Quasi-random interior points with density clustered near one or
+        both ends of the r and/or t axes -- an alternative to
+        `sample_collocation_points`'s uniform Latin Hypercube draw, for
+        problems where the PDE residual (or known solution behavior) is
+        concentrated near a specific boundary, e.g. a boundary layer near
+        r=1 in the trastuzumab model.
+
+        Same boundary-clustering *idea* as classical Chebyshev nodes, but
+        as a genuinely random, reproducible-via-seed draw rather than a
+        fixed deterministic grid (see this method's earlier symmetric
+        version's docstring note if you need the literal deterministic
+        nodes instead).
+
+        Args:
+            n_points: how many points to draw.
+            l_bounds, u_bounds: `[r_min, t_min]` / `[r_max, t_max]` box
+                to sample within.
+            r_side, t_side: which end of that axis to cluster points near.
+                One of:
+                    'both'  -- cluster near BOTH ends (the original
+                            symmetric arcsine behavior; default).
+                    'high'  -- cluster only near `u_bounds[i]` (e.g.
+                            r_side='high' for more points near r=1).
+                    'low'   -- cluster only near `l_bounds[i]`.
+                    None    -- no clustering; plain uniform on this axis.
+            concentration: how aggressively 'high'/'low' pull mass toward
+                that end. `1.0` = uniform (no effect); higher values pull
+                harder. Has no effect on `'both'` (always uses the fixed
+                arcsine map) or `None`. Ignored per-axis if that axis's
+                `_side` is `'both'` or `None`.
+            seed_offset: added to `self.seed` before drawing, same
+                convention as `sample_collocation_points`.
+
+        Returns:
+            Dataset, name='chebyshev_collocation', with `n_points` rows.
+
+        Example -- more points near r=1 only, t left uniform:
+            sampler.sample_chebyshev_collocation_points(
+                n_points=10_000, r_side='high', t_side=None, concentration=4.0,
+            )
+        """
+        rng = np.random.default_rng(self.seed + seed_offset)
+        raw = rng.random((n_points, 2))
+        raw_r = raw[:, 0:1]
+        raw_t = raw[:, 1:2]
+
+        def _transform(raw_col: np.ndarray, side, k):
+            if side == 'both':
+                return 0.5 - 0.5 * np.cos(np.pi * raw_col)          # symmetric arcsine
+            elif side == 'high':
+                return raw_col ** (1.0 / k)                          # pushes toward 1
+            elif side == 'low':
+                return 1.0 - (1.0 - raw_col) ** (1.0 / k)            # pushes toward 0
+            elif side is None:
+                return raw_col                                        # plain uniform
+            else:
+                raise ValueError(f"side must be 'both', 'high', 'low', or None, got {side!r}")
+            
+        r_frac = _transform(raw_r, r_side, concentration)
+        t_frac = _transform(raw_t, t_side, concentration)
+        
+        r = r_frac * (u_bounds[0] - l_bounds[0]) + l_bounds[0]
+        t = t_frac * (u_bounds[1] - l_bounds[1]) + l_bounds[1]
+        dataset = np.hstack([r, t])
+
+        return Dataset(data=dataset, name='chebyshev_collocation', upper_bounds=u_bounds, n_points=n_points)
 
     def sample_initial_points(self, n_points, l_bounds=[0, 0], u_bounds=[1, 1]):
         """Points spread evenly across r, all at t = `l_bounds[1]`
